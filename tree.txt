@@ -1,0 +1,23 @@
+C:\cc-dispatch
++---client
+¦   +---build
+¦   ¦   +---static
+¦   ¦       +---css
+¦   ¦       +---js
+¦   +---node_modules
+¦   +---public
+¦   +---src
+¦       +---components
+¦       +---context
+¦       +---hooks
+¦       +---pages
+¦       +---services
++---config
++---middleware
++---node_modules
++---public
+¦   +---static
+¦       +---css
+¦       +---js
++---routes
++---utils
