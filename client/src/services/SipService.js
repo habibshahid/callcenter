@@ -246,6 +246,31 @@ class SipService {
         throw new Error('Invalid number');
       }
 
+      try {
+        const token = localStorage.getItem('token');
+        const response = await fetch('/api/contacts-management/log-call', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            phone: number,
+            direction: 'outbound',
+            type: 'call'
+          })
+        });
+        
+        if (response.ok) {
+          const contactInfo = await response.json();
+          console.log('Contact info:', contactInfo);
+          // You can use this info to display contact details during the call
+        }
+      } catch (logError) {
+        console.error('Error logging call:', logError);
+        // Don't block the call if logging fails
+      }
+      
       const options = {
         earlyMedia: true,
         sessionDescriptionHandlerOptions: {

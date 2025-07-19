@@ -6,10 +6,11 @@ import Menu from './components/Menu';
 import TopBar from './components/TopBar';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
-import Contacts from './pages/Contacts';
+import Inbox from './pages/Inbox';
 import ChangePassword from './pages/ChangePassword';
 import { CallProvider } from './context/CallContext';
 import 'bootstrap/dist/css/bootstrap.min.css';
+import ContactsManagement from './pages/ContactsManagement';
 
 const PrivateLayout = ({ children }) => {
   const token = localStorage.getItem('token');
@@ -57,10 +58,18 @@ export default function App() {
               }
             />
             <Route
-              path="/contacts"
+              path="/inbox"
               element={
                 <PrivateLayout>
-                  <Contacts />
+                  <Inbox />
+                </PrivateLayout>
+              }
+            />
+            <Route
+              path="/contacts-management"
+              element={
+                <PrivateLayout>
+                  <ContactsManagement />
                 </PrivateLayout>
               }
             />

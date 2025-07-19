@@ -17,7 +17,7 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      connectSrc: ["'self'", "wss://axon.weinteract.com:8089"], // Allow WebSocket connection
+      connectSrc: ["'self'", "wss://accelera.weinteract.com:8089"], // Allow WebSocket connection
       scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", "data:", "https:"],

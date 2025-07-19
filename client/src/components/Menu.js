@@ -1,12 +1,13 @@
 // src/components/Menu.js
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Home, BarChart2, Inbox, Share } from 'lucide-react';
+import { Home, BarChart2, Inbox, Share, Users } from 'lucide-react';
 
 const menuItems = [
   { icon: Home, path: '/dashboard', label: 'Home' },
   { icon: BarChart2, path: '/analytics', label: 'Analytics' },
-  { icon: Inbox, path: '/contacts', label: 'Inbox' },
+  { icon: Inbox, path: '/inbox', label: 'Inbox' },
+  { icon: Users, path: '/contacts-management', label: 'Leads' },
   { icon: Share, path: '/share', label: 'Share' }
 ];
 

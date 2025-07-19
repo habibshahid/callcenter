@@ -3,31 +3,15 @@ const express = require('express');
 const router = express.Router();
 const db = require('../config/database');
 const { authenticateToken } = require('../middleware/auth');
+const { normalizePhone } = require('../utils/phoneUtils');
 
 router.use(authenticateToken);
 
 /// Get all contacts
 router.get('/', async (req, res) => {
   try {
-    const [contacts] = await db.query(`
-      SELECT 
-        c.id,
-        c.name,
-        c.phone,
-        c.email,
-        q.name as queue,
-        c.status,
-        c.dnis,
-        c.address,
-        c.on_hold,
-        c.recording_paused,
-        DATE_FORMAT(c.created_at, '%H:%i') as call_time
-      FROM contacts c
-      LEFT JOIN queues q ON c.queue_id = q.id
-      WHERE c.status = 'active'
-    `);
-
-    res.json(contacts);
+    // Return empty array for now to maintain compatibility
+    res.json([]);
   } catch (error) {
     console.error('Error fetching contacts:', error);
     res.status(500).json({ message: 'Error fetching contacts' });
@@ -36,33 +20,116 @@ router.get('/', async (req, res) => {
 
 router.get('/lookup/:phone', async (req, res) => {
   try {
-    const [contacts] = await db.query(`
+    const normalizedPhone = normalizePhone(req.params.phone);
+    
+    // Check the new contacts management table
+    const [managedContacts] = await db.query(`
       SELECT 
         c.id,
-        c.name,
-        c.phone,
+        CONCAT_WS(' ', c.first_name, c.last_name) as name,
+        c.phone_primary as phone,
         c.email,
-        q.name as queue,
+        cam.name as campaign_name,
         c.status,
-        c.dnis,
-        c.address,
-        c.on_hold,
-        c.recording_paused,
-        DATE_FORMAT(c.created_at, '%H:%i') as call_time
+        c.company,
+        c.custom_data,
+        'managed_contact' as source
       FROM contacts c
-      LEFT JOIN queues q ON c.queue_id = q.id
-      WHERE c.phone = ?
+      LEFT JOIN campaigns cam ON c.campaign_id = cam.id
+      WHERE c.phone_normalized = ?
       LIMIT 1
-    `, [req.params.phone]);
+    `, [normalizedPhone]);
 
-    if (contacts && contacts.length > 0) {
-      res.json(contacts[0]);
-    } else {
-      res.json(null);
+    if (managedContacts && managedContacts.length > 0) {
+      const contact = managedContacts[0];
+      // Parse custom_data if it exists
+      if (contact.custom_data) {
+        try {
+          contact.custom_data = JSON.parse(contact.custom_data);
+        } catch (e) {
+          contact.custom_data = {};
+        }
+      }
+      
+      // Log the interaction
+      await db.query(
+        `INSERT INTO contact_interactions 
+         (contact_id, interaction_type, direction, details) 
+         VALUES (?, 'call', 'inbound', ?)`,
+        [contact.id, JSON.stringify({ phone: req.params.phone })]
+      );
+      
+      // Update last contacted
+      await db.query(
+        `UPDATE contacts 
+         SET last_contacted_at = NOW(), contact_attempts = contact_attempts + 1 
+         WHERE id = ?`,
+        [contact.id]
+      );
+      
+      return res.json(contact);
     }
+
+    // No contact found
+    res.json(null);
   } catch (error) {
     console.error('Error looking up contact:', error);
     res.status(500).json({ message: 'Error looking up contact' });
+  }
+});
+
+// Log call interaction
+router.post('/log-call', authenticateToken, async (req, res) => {
+  try {
+    const { phone, direction, type } = req.body;
+    const normalized = normalizePhone(phone);
+    
+    // Find contact by phone
+    const [contacts] = await db.query(
+      'SELECT * FROM contacts WHERE phone_normalized = ? LIMIT 1',
+      [normalized]
+    );
+    
+    if (contacts.length > 0) {
+      const contact = contacts[0];
+      
+      // Log interaction
+      await db.query(
+        `INSERT INTO contact_interactions 
+         (contact_id, interaction_type, direction, agent_id, details) 
+         VALUES (?, ?, ?, ?, ?)`,
+        [
+          contact.id,
+          type || 'call',
+          direction,
+          req.user.id,
+          JSON.stringify({ phone, timestamp: new Date() })
+        ]
+      );
+      
+      // Update contact
+      await db.query(
+        `UPDATE contacts 
+         SET last_contacted_at = NOW(), 
+             contact_attempts = contact_attempts + 1 
+         WHERE id = ?`,
+        [contact.id]
+      );
+      
+      // Return contact info for display
+      res.json({
+        id: contact.id,
+        name: `${contact.first_name || ''} ${contact.last_name || ''}`.trim(),
+        company: contact.company,
+        campaign_id: contact.campaign_id,
+        custom_data: contact.custom_data
+      });
+    } else {
+      res.json({ phone, found: false });
+    }
+  } catch (error) {
+    console.error('Error logging call:', error);
+    res.status(500).json({ message: 'Error logging call' });
   }
 });
 
@@ -71,25 +138,14 @@ router.get('/:id/history', async (req, res) => {
   try {
     const [history] = await db.query(`
       SELECT 
-        DATE_FORMAT(created_at, '%h:%i %p') as time,
-        'Cancel Order' as action,
-        'Sandra Anderson' as agent,
-        'Queue_Voice_EP' as queue,
-        '05:23' as duration,
-        DATE_FORMAT(created_at, '%M %d, %Y') as date
-      FROM contacts 
-      WHERE id = ?
-      UNION ALL
-      SELECT 
-        DATE_FORMAT(DATE_SUB(created_at, INTERVAL 1 HOUR), '%h:%i %p'),
-        'Cancel Order',
-        'Sandra Anderson',
-        'Queue_Voice_EP',
-        '05:23',
-        DATE_FORMAT(created_at, '%M %d, %Y')
-      FROM contacts 
-      WHERE id = ?
-    `, [req.params.id, req.params.id]);
+        ci.*,
+        u.username as agent_name
+      FROM contact_interactions ci
+      LEFT JOIN users u ON ci.agent_id = u.id
+      WHERE ci.contact_id = ?
+      ORDER BY ci.created_at DESC
+      LIMIT 20
+    `, [req.params.id]);
 
     res.json(history);
   } catch (error) {

@@ -9,6 +9,7 @@ const breaksRoutes = require('./breaks');
 const sipRoutes = require('./sip');
 const agentRoutes = require('./agents');
 const { authenticateToken } = require('../middleware/auth');
+const contactsManagementRoutes = require('./contacts-management');
 
 // Public routes
 router.use('/auth', authRoutes);
@@ -20,5 +21,6 @@ router.use('/dashboard', authenticateToken, dashboardRoutes);
 router.use('/breaks', authenticateToken, breaksRoutes);
 router.use('/sip', authenticateToken, sipRoutes);
 router.use('/agent', authenticateToken, agentRoutes);
+router.use('/contacts-management', authenticateToken, contactsManagementRoutes);
 
 module.exports = router;
