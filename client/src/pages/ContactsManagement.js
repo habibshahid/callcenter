@@ -1,9 +1,9 @@
-// client/src/pages/ContactsManagement.js - Enhanced version
+// client/src/pages/ContactsManagement.js
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Search, Upload, Download, Phone, Mail, Filter, Plus, Edit, 
   Eye, ChevronLeft, ChevronRight, Users, CheckCircle, AlertCircle,
-  Trash2, UserCheck, Tag, RefreshCw, FileSpreadsheet, Save
+  Trash2, UserCheck, Tag, RefreshCw, FileSpreadsheet, Save, Database, X
 } from 'lucide-react';
 import { api } from '../services/api';
 import { useCall } from '../context/CallContext';
@@ -13,6 +13,8 @@ import DuplicateManager from '../components/DuplicateManager';
 import AddContactModal from '../components/AddContactModal';
 import EditContactModal from '../components/EditContactModal';
 import ViewContactModal from '../components/ViewContactModal';
+import CustomFieldsSearchModal from '../components/CustomFieldsSearchModal';
+import CustomFieldsDisplay from '../components/CustomFieldsDisplay';
 import '../styles/ContactsManagement.css';
 
 export default function ContactsManagement() {
@@ -29,6 +31,16 @@ export default function ContactsManagement() {
     status: '',
     assigned_to: ''
   });
+  
+  // Column filters state
+  const [columnFilters, setColumnFilters] = useState({
+    name: '',
+    phone: '',
+    email: '',
+    company: '',
+    last_contact: ''
+  });
+  
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 50,
@@ -46,6 +58,12 @@ export default function ContactsManagement() {
   const [showViewModal, setShowViewModal] = useState(false);
   const [selectedContactForEdit, setSelectedContactForEdit] = useState(null);
   const [selectedContactIdForView, setSelectedContactIdForView] = useState(null);
+  
+  // Custom fields search state
+  const [showCustomFieldsSearch, setShowCustomFieldsSearch] = useState(false);
+  const [customFieldsSearchActive, setCustomFieldsSearchActive] = useState(false);
+  const [customFieldsFilters, setCustomFieldsFilters] = useState(null);
+
   // Load initial data
   useEffect(() => {
     loadCampaigns();
@@ -55,24 +73,128 @@ export default function ContactsManagement() {
 
   // Load contacts when filters change
   useEffect(() => {
-    loadContacts();
+    if (!customFieldsSearchActive) {
+      loadContacts();
+    }
   }, [selectedCampaign, filters.status, filters.assigned_to, pagination.page]);
 
   // Debounced search
   const debouncedSearch = useCallback(
     debounce((query) => {
-      loadContacts(query);
+      if (!customFieldsSearchActive) {
+        loadContacts(query);
+      }
     }, 300),
-    [selectedCampaign, filters]
+    [selectedCampaign, filters, customFieldsSearchActive]
   );
 
   useEffect(() => {
-    if (searchQuery) {
+    if (searchQuery && !customFieldsSearchActive) {
       debouncedSearch(searchQuery);
-    } else {
+    } else if (!searchQuery && !customFieldsSearchActive) {
       loadContacts();
     }
   }, [searchQuery]);
+
+  // Debounced column filters
+  const debouncedColumnFilter = useCallback(
+    debounce((filterValues) => {
+      if (customFieldsSearchActive) {
+        loadContactsWithCustomFields();
+      } else {
+        loadContacts(searchQuery, filterValues);
+      }
+    }, 300),
+    [searchQuery, customFieldsSearchActive, customFieldsFilters]
+  );
+
+  useEffect(() => {
+    debouncedColumnFilter(columnFilters);
+  }, [columnFilters]);
+
+  // Load contacts with custom fields search when pagination changes
+  useEffect(() => {
+    if (customFieldsSearchActive && customFieldsFilters) {
+      loadContactsWithCustomFields();
+    }
+  }, [pagination.page]);
+
+  const handleCustomFieldsSearch = async (searchParams) => {
+    try {
+      setLoading(true);
+      setCustomFieldsSearchActive(true);
+      setCustomFieldsFilters(searchParams);
+      setPagination({ ...pagination, page: 1 });
+
+      const response = await api.searchContactsByCustomFields({
+        ...searchParams,
+        page: 1,
+        limit: pagination.limit,
+        include_standard_filters: {
+          status: filters.status,
+          assigned_to: filters.assigned_to
+        },
+        column_filters: columnFilters
+      });
+
+      setContacts(response.contacts);
+      setPagination(response.pagination);
+    } catch (error) {
+      console.error('Custom fields search error:', error);
+      alert('Error searching custom fields');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const clearCustomFieldsSearch = () => {
+    setCustomFieldsSearchActive(false);
+    setCustomFieldsFilters(null);
+    loadContacts();
+  };
+
+  const clearAllFilters = () => {
+    setSearchQuery('');
+    setColumnFilters({
+      name: '',
+      phone: '',
+      email: '',
+      company: '',
+      last_contact: ''
+    });
+    setFilters({
+      status: '',
+      assigned_to: ''
+    });
+    if (customFieldsSearchActive) {
+      clearCustomFieldsSearch();
+    }
+  };
+
+  const loadContactsWithCustomFields = async () => {
+    if (!customFieldsFilters) return;
+
+    try {
+      setLoading(true);
+      const response = await api.searchContactsByCustomFields({
+        ...customFieldsFilters,
+        page: pagination.page,
+        limit: pagination.limit,
+        include_standard_filters: {
+          status: filters.status,
+          assigned_to: filters.assigned_to
+        },
+        column_filters: columnFilters
+      });
+
+      setContacts(response.contacts);
+      setPagination(response.pagination);
+    } catch (error) {
+      console.error('Error loading custom fields search results:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleViewContact = (contactId) => {
     setSelectedContactIdForView(contactId);
@@ -85,12 +207,20 @@ export default function ContactsManagement() {
   };
 
   const handleAddSuccess = () => {
-    loadContacts();
+    if (customFieldsSearchActive) {
+      loadContactsWithCustomFields();
+    } else {
+      loadContacts();
+    }
     alert('Contact added successfully!');
   };
 
   const handleEditSuccess = () => {
-    loadContacts();
+    if (customFieldsSearchActive) {
+      loadContactsWithCustomFields();
+    } else {
+      loadContacts();
+    }
     alert('Contact updated successfully!');
   };
 
@@ -101,7 +231,11 @@ export default function ContactsManagement() {
 
     try {
       await api.deleteContact(contactId);
-      loadContacts();
+      if (customFieldsSearchActive) {
+        loadContactsWithCustomFields();
+      } else {
+        loadContacts();
+      }
       alert('Contact deleted successfully');
     } catch (error) {
       console.error('Error deleting contact:', error);
@@ -130,7 +264,7 @@ export default function ContactsManagement() {
     }
   };
 
-  const loadContacts = async (search = searchQuery) => {
+  const loadContacts = async (search = searchQuery, colFilters = columnFilters) => {
     try {
       setLoading(true);
       const params = {
@@ -139,7 +273,13 @@ export default function ContactsManagement() {
         campaign_id: selectedCampaign,
         ...(filters.status && { status: filters.status }),
         ...(filters.assigned_to && { assigned_to: filters.assigned_to }),
-        ...(search && { search })
+        ...(search && { search }),
+        // Add column filters
+        ...(colFilters.name && { filter_name: colFilters.name }),
+        ...(colFilters.phone && { filter_phone: colFilters.phone }),
+        ...(colFilters.email && { filter_email: colFilters.email }),
+        ...(colFilters.company && { filter_company: colFilters.company }),
+        ...(colFilters.last_contact && { filter_last_contact: colFilters.last_contact })
       };
 
       const data = await api.getContactsList(params);
@@ -167,7 +307,10 @@ export default function ContactsManagement() {
         name: filterName,
         campaign_id: selectedCampaign,
         ...filters,
-        search: searchQuery
+        search: searchQuery,
+        columnFilters: columnFilters,
+        isCustomFields: customFieldsSearchActive,
+        customFieldsFilters: customFieldsFilters
       };
       const updated = [...savedFilters, newFilter];
       setSavedFilters(updated);
@@ -176,12 +319,32 @@ export default function ContactsManagement() {
   };
 
   const loadSavedFilter = (filter) => {
-    setSelectedCampaign(filter.campaign_id);
-    setFilters({
-      status: filter.status || '',
-      assigned_to: filter.assigned_to || ''
-    });
-    setSearchQuery(filter.search || '');
+    if (filter.isCustomFields && filter.customFieldsFilters) {
+      setSelectedCampaign(filter.campaign_id);
+      setColumnFilters(filter.columnFilters || {
+        name: '',
+        phone: '',
+        email: '',
+        company: '',
+        last_contact: ''
+      });
+      handleCustomFieldsSearch(filter.customFieldsFilters);
+    } else {
+      setSelectedCampaign(filter.campaign_id);
+      setFilters({
+        status: filter.status || '',
+        assigned_to: filter.assigned_to || ''
+      });
+      setSearchQuery(filter.search || '');
+      setColumnFilters(filter.columnFilters || {
+        name: '',
+        phone: '',
+        email: '',
+        company: '',
+        last_contact: ''
+      });
+      setCustomFieldsSearchActive(false);
+    }
     setShowFilterMenu(false);
   };
 
@@ -199,7 +362,11 @@ export default function ContactsManagement() {
           if (window.confirm(`Delete ${contactIds.length} contacts?`)) {
             await api.bulkDeleteContacts(contactIds);
             setSelectedContacts(new Set());
-            loadContacts();
+            if (customFieldsSearchActive) {
+              loadContactsWithCustomFields();
+            } else {
+              loadContacts();
+            }
           }
           break;
 
@@ -208,7 +375,11 @@ export default function ContactsManagement() {
           if (assignTo) {
             await api.bulkAssignContacts(contactIds, assignTo);
             setSelectedContacts(new Set());
-            loadContacts();
+            if (customFieldsSearchActive) {
+              loadContactsWithCustomFields();
+            } else {
+              loadContacts();
+            }
           }
           break;
 
@@ -217,7 +388,11 @@ export default function ContactsManagement() {
           if (newStatus) {
             await api.bulkUpdateContacts(contactIds, { status: newStatus });
             setSelectedContacts(new Set());
-            loadContacts();
+            if (customFieldsSearchActive) {
+              loadContactsWithCustomFields();
+            } else {
+              loadContacts();
+            }
           }
           break;
 
@@ -282,6 +457,14 @@ export default function ContactsManagement() {
     setSelectedContacts(newSelected);
   };
 
+  const updateColumnFilter = (column, value) => {
+    setColumnFilters(prev => ({
+      ...prev,
+      [column]: value
+    }));
+    setPagination(prev => ({ ...prev, page: 1 })); // Reset to first page
+  };
+
   const getStatusBadgeClass = (status) => {
     const statusClasses = {
       'new': 'bg-primary',
@@ -292,6 +475,15 @@ export default function ContactsManagement() {
       'invalid': 'bg-secondary'
     };
     return statusClasses[status] || 'bg-secondary';
+  };
+
+  // Check if any filters are active
+  const hasActiveFilters = () => {
+    return searchQuery || 
+           filters.status || 
+           filters.assigned_to || 
+           Object.values(columnFilters).some(v => v) || 
+           customFieldsSearchActive;
   };
 
   return (
@@ -335,13 +527,33 @@ export default function ContactsManagement() {
         </div>
       </div>
 
+      {/* Custom Fields Search Indicator */}
+      {customFieldsSearchActive && (
+        <div className="alert alert-warning custom-fields-active d-flex justify-content-between align-items-center mb-3">
+          <div>
+            <Database size={18} className="me-2" />
+            <strong>Custom Fields Search Active</strong> - Showing filtered results based on custom data
+          </div>
+          <button 
+            className="btn btn-sm btn-outline-dark"
+            onClick={clearCustomFieldsSearch}
+          >
+            Clear Custom Search
+          </button>
+        </div>
+      )}
+
       {/* Filters Row */}
       <div className="row mb-3">
         <div className="col-md-2">
           <select 
             className="form-select"
             value={selectedCampaign}
-            onChange={(e) => setSelectedCampaign(e.target.value)}
+            onChange={(e) => {
+              setSelectedCampaign(e.target.value);
+              if (customFieldsSearchActive) clearCustomFieldsSearch();
+            }}
+            disabled={customFieldsSearchActive}
           >
             <option value="">Select Campaign</option>
             {campaigns.map(campaign => (
@@ -355,7 +567,12 @@ export default function ContactsManagement() {
           <select 
             className="form-select"
             value={filters.status}
-            onChange={(e) => setFilters({...filters, status: e.target.value})}
+            onChange={(e) => {
+              setFilters({...filters, status: e.target.value});
+              if (customFieldsSearchActive) {
+                loadContactsWithCustomFields();
+              }
+            }}
           >
             <option value="">All Status</option>
             <option value="new">New</option>
@@ -370,7 +587,12 @@ export default function ContactsManagement() {
           <select 
             className="form-select"
             value={filters.assigned_to}
-            onChange={(e) => setFilters({...filters, assigned_to: e.target.value})}
+            onChange={(e) => {
+              setFilters({...filters, assigned_to: e.target.value});
+              if (customFieldsSearchActive) {
+                loadContactsWithCustomFields();
+              }
+            }}
           >
             <option value="">All Agents</option>
             {agents.map(agent => (
@@ -390,8 +612,21 @@ export default function ContactsManagement() {
               className="form-control"
               placeholder="Search by name, phone, email..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                if (customFieldsSearchActive) clearCustomFieldsSearch();
+              }}
+              disabled={customFieldsSearchActive}
             />
+            <button 
+              className="btn btn-primary btn-custom-fields"
+              onClick={() => setShowCustomFieldsSearch(true)}
+              title="Search Custom Fields"
+              disabled={!selectedCampaign}
+            >
+              <Database size={18} className="me-1" />
+              Custom Fields
+            </button>
           </div>
         </div>
         <div className="col-md-2">
@@ -414,6 +649,21 @@ export default function ContactsManagement() {
         </div>
       </div>
 
+      {/* Clear All Filters Button */}
+      {hasActiveFilters() && (
+        <div className="row mb-3">
+          <div className="col text-end">
+            <button 
+              className="btn btn-sm btn-outline-danger"
+              onClick={clearAllFilters}
+            >
+              <X size={16} className="me-1" />
+              Clear All Filters
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Saved Filters Dropdown */}
       {showFilterMenu && savedFilters.length > 0 && (
         <div className="row mb-3">
@@ -429,6 +679,7 @@ export default function ContactsManagement() {
                       onClick={() => loadSavedFilter(filter)}
                     >
                       {filter.name}
+                      {filter.isCustomFields && <Database size={14} className="ms-1" />}
                     </button>
                   ))}
                 </div>
@@ -454,7 +705,11 @@ export default function ContactsManagement() {
               className="btn btn-link btn-sm p-0"
               onClick={() => {
                 setPagination({...pagination, page: 1});
-                loadContacts();
+                if (customFieldsSearchActive) {
+                  loadContactsWithCustomFields();
+                } else {
+                  loadContacts();
+                }
               }}
             >
               <RefreshCw size={16} />
@@ -502,12 +757,56 @@ export default function ContactsManagement() {
                     checked={selectedContacts.size === contacts.length && contacts.length > 0}
                   />
                 </th>
-                <th>Name</th>
-                <th>Phone</th>
-                <th>Email</th>
-                <th>Company</th>
+                <th>
+                  Name
+                  <input
+                    type="text"
+                    className="form-control form-control-sm mt-1"
+                    placeholder="Filter name..."
+                    value={columnFilters.name}
+                    onChange={(e) => updateColumnFilter('name', e.target.value)}
+                  />
+                </th>
+                <th>
+                  Phone
+                  <input
+                    type="text"
+                    className="form-control form-control-sm mt-1"
+                    placeholder="Filter phone..."
+                    value={columnFilters.phone}
+                    onChange={(e) => updateColumnFilter('phone', e.target.value)}
+                  />
+                </th>
+                <th>
+                  Email
+                  <input
+                    type="text"
+                    className="form-control form-control-sm mt-1"
+                    placeholder="Filter email..."
+                    value={columnFilters.email}
+                    onChange={(e) => updateColumnFilter('email', e.target.value)}
+                  />
+                </th>
+                <th>
+                  Company
+                  <input
+                    type="text"
+                    className="form-control form-control-sm mt-1"
+                    placeholder="Filter company..."
+                    value={columnFilters.company}
+                    onChange={(e) => updateColumnFilter('company', e.target.value)}
+                  />
+                </th>
                 <th>Status</th>
-                <th>Last Contact</th>
+                <th>
+                  Last Contact
+                  <input
+                    type="date"
+                    className="form-control form-control-sm mt-1"
+                    value={columnFilters.last_contact}
+                    onChange={(e) => updateColumnFilter('last_contact', e.target.value)}
+                  />
+                </th>
                 <th>Assigned To</th>
                 <th width="120">Actions</th>
               </tr>
@@ -527,106 +826,143 @@ export default function ContactsManagement() {
                   </td>
                 </tr>
               ) : (
-                contacts.map(contact => (
-                  <tr key={contact.id} className={selectedContacts.has(contact.id) ? 'table-active' : ''}>
-                    <td>
-                      <input
-                        type="checkbox"
-                        className="form-check-input"
-                        checked={selectedContacts.has(contact.id)}
-                        onChange={() => handleSelectContact(contact.id)}
-                      />
-                    </td>
-                    <td>
-                      <div className="fw-medium">
-                        {contact.first_name || contact.last_name ? 
-                          `${contact.first_name || ''} ${contact.last_name || ''}`.trim() : 
-                          <span className="text-muted">No name</span>
-                        }
-                      </div>
-                    </td>
-                    <td>
-                      <a 
-                        href="#" 
-                        className="text-decoration-none"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          handleCall(contact.phone_primary);
-                        }}
-                      >
-                        <Phone size={14} className="me-1" />
-                        {contact.phone_display}
-                      </a>
-                    </td>
-                    <td>
-                      {contact.email ? (
-                        <a href={`mailto:${contact.email}`} className="text-decoration-none">
-                          <Mail size={14} className="me-1" />
-                          {contact.email}
-                        </a>
-                      ) : (
-                        <span className="text-muted">-</span>
-                      )}
-                    </td>
-                    <td>{contact.company || <span className="text-muted">-</span>}</td>
-                    <td>
-                      <span className={`badge ${getStatusBadgeClass(contact.status)}`}>
-                        {contact.status.replace('_', ' ')}
-                      </span>
-                    </td>
-                    <td>
-                      {contact.last_interaction ? 
-                        new Date(contact.last_interaction).toLocaleDateString() : 
-                        <span className="text-muted">Never</span>
-                      }
-                    </td>
-                    <td>{contact.assigned_to_name || <span className="text-muted">Unassigned</span>}</td>
-                    <td>
-                      <div className="btn-group btn-group-sm">
-                        <button 
-                          className="btn btn-outline-secondary"
+                contacts.map(contact => {
+                  const hasCustomData = contact.custom_data && Object.keys(contact.custom_data).length > 0;
+                  const hasMatchedFields = contact.matched_custom_fields && contact.matched_custom_fields.length > 0;
+                  
+                  return (
+                    <tr 
+                      key={contact.id} 
+                      className={`
+                        ${selectedContacts.has(contact.id) ? 'table-active' : ''}
+                        ${hasMatchedFields ? 'has-custom-match' : ''}
+                      `}
+                    >
+                      <td>
+                        <input
+                          type="checkbox"
+                          className="form-check-input"
+                          checked={selectedContacts.has(contact.id)}
+                          onChange={() => handleSelectContact(contact.id)}
+                        />
+                      </td>
+                      <td>
+                        <div className="d-flex flex-column">
+                          <div className="fw-medium">
+                            {contact.first_name || contact.last_name ? 
+                              `${contact.first_name || ''} ${contact.last_name || ''}`.trim() : 
+                              <span className="text-muted">No name</span>
+                            }
+                          </div>
+                          
+                          {/* Show custom fields when custom search is active */}
+                          {customFieldsSearchActive && hasCustomData && (
+                            <div className="mt-1">
+                              <CustomFieldsDisplay
+                                customData={contact.custom_data}
+                                matchedFields={contact.matched_custom_fields || []}
+                                displayMode="inline"
+                                maxFields={3}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                      <td>
+                        <a 
+                          href="#" 
+                          className="text-decoration-none"
                           onClick={(e) => {
-                            e.stopPropagation();
-                            handleViewContact(contact.id);
-                          }}
-                          title="View full contact details"
-                        >
-                          <Eye size={14} />
-                        </button>
-                        <button 
-                          className="btn btn-outline-secondary"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleEditContact(contact);
-                          }}
-                          title="Edit contact information"
-                        >
-                          <Edit size={14} />
-                        </button>
-                        <button 
-                          className="btn btn-outline-danger"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteContact(contact.id);
-                          }}
-                          title="Delete this contact"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                        <button 
-                          className="btn btn-outline-primary"
-                          onClick={(e) => {
-                            e.stopPropagation();
+                            e.preventDefault();
                             handleCall(contact.phone_primary);
                           }}
-                          title="Call this contact"
                         >
-                          <Phone size={14} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                          <Phone size={14} className="me-1" />
+                          {contact.phone_display}
+                        </a>
+                      </td>
+                      <td>
+                        {contact.email ? (
+                          <a href={`mailto:${contact.email}`} className="text-decoration-none">
+                            <Mail size={14} className="me-1" />
+                            {contact.email}
+                          </a>
+                        ) : (
+                          <span className="text-muted">-</span>
+                        )}
+                      </td>
+                      <td>
+                        {contact.company || <span className="text-muted">-</span>}
+                        
+                        {/* Show custom data count if not in custom search mode */}
+                        {!customFieldsSearchActive && hasCustomData && (
+                          <div>
+                            <small className="text-muted">
+                              <Database size={12} className="me-1" />
+                              {Object.keys(contact.custom_data).length} fields
+                            </small>
+                          </div>
+                        )}
+                      </td>
+                      <td>
+                        <span className={`badge ${getStatusBadgeClass(contact.status)}`}>
+                          {contact.status.replace('_', ' ')}
+                        </span>
+                      </td>
+                      <td>
+                        {contact.last_interaction ? 
+                          new Date(contact.last_interaction).toLocaleDateString() : 
+                          <span className="text-muted">Never</span>
+                        }
+                      </td>
+                      <td>{contact.assigned_to_name || <span className="text-muted">Unassigned</span>}</td>
+                      <td>
+                        <div className="btn-group btn-group-sm">
+                          <button 
+                            className="btn btn-outline-secondary"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleViewContact(contact.id);
+                            }}
+                            title="View full contact details"
+                          >
+                            <Eye size={14} />
+                          </button>
+                          <button 
+                            className="btn btn-outline-secondary"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleEditContact(contact);
+                            }}
+                            title="Edit contact information"
+                          >
+                            <Edit size={14} />
+                          </button>
+                          <button 
+                            className="btn btn-outline-danger"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteContact(contact.id);
+                            }}
+                            title="Delete this contact"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                          <button 
+                            className="btn btn-outline-primary"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCall(contact.phone_primary);
+                            }}
+                            title="Call this contact"
+                          >
+                            <Phone size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -684,23 +1020,29 @@ export default function ContactsManagement() {
         )}
       </div>
 
-      {/* Enhanced Import Modal */}
+      {/* Modals */}
       {showImportModal && (
         <EnhancedImportModal
           campaigns={campaigns}
           onClose={() => setShowImportModal(false)}
           onImportComplete={() => {
             setShowImportModal(false);
-            loadContacts();
+            if (customFieldsSearchActive) {
+              loadContactsWithCustomFields();
+            } else {
+              loadContacts();
+            }
           }}
         />
       )}
+      
       {showDuplicateManager && (
         <DuplicateManager
           campaignId={selectedCampaign}
           onClose={() => setShowDuplicateManager(false)}
         />
       )}
+      
       {showAddModal && (
         <AddContactModal
           campaigns={campaigns}
@@ -709,7 +1051,6 @@ export default function ContactsManagement() {
         />
       )}
 
-      {/* Edit Contact Modal */}
       {showEditModal && selectedContactForEdit && (
         <EditContactModal
           contact={selectedContactForEdit}
@@ -722,7 +1063,6 @@ export default function ContactsManagement() {
         />
       )}
 
-      {/* View Contact Modal */}
       {showViewModal && selectedContactIdForView && (
         <ViewContactModal
           contactId={selectedContactIdForView}
@@ -735,6 +1075,15 @@ export default function ContactsManagement() {
             setSelectedContactIdForView(null);
             handleEditContact(contact);
           }}
+        />
+      )}
+
+      {/* Custom Fields Search Modal */}
+      {showCustomFieldsSearch && (
+        <CustomFieldsSearchModal
+          campaignId={selectedCampaign}
+          onClose={() => setShowCustomFieldsSearch(false)}
+          onSearch={handleCustomFieldsSearch}
         />
       )}
     </div>

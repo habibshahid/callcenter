@@ -86,7 +86,13 @@ router.get('/contacts', async (req, res) => {
       search,
       assigned_to,
       sort_by = 'created_at',
-      sort_order = 'DESC'
+      sort_order = 'DESC',
+      // Column-specific filters
+      filter_name,
+      filter_phone,
+      filter_email,
+      filter_company,
+      filter_last_contact
     } = req.query;
 
     const offset = (parseInt(page) - 1) * parseInt(limit);
@@ -109,10 +115,39 @@ router.get('/contacts', async (req, res) => {
       params.push(assigned_to);
     }
 
+    // Global search
     if (search) {
       conditions.push('(c.search_text LIKE ? OR c.phone_normalized LIKE ?)');
       const searchPattern = `%${search}%`;
       params.push(searchPattern, searchPattern);
+    }
+
+    // Column-specific searches (case-insensitive)
+    if (filter_name) {
+      conditions.push(`(LOWER(CONCAT(IFNULL(c.first_name, ''), ' ', IFNULL(c.last_name, ''))) LIKE LOWER(?))`);
+      params.push(`%${filter_name}%`);
+    }
+
+    if (filter_phone) {
+      conditions.push('(c.phone_primary LIKE ? OR c.phone_normalized LIKE ?)');
+      const phonePattern = `%${filter_phone}%`;
+      params.push(phonePattern, phonePattern);
+    }
+
+    if (filter_email) {
+      conditions.push('LOWER(c.email) LIKE LOWER(?)');
+      params.push(`%${filter_email}%`);
+    }
+
+    if (filter_company) {
+      conditions.push('LOWER(c.company) LIKE LOWER(?)');
+      params.push(`%${filter_company}%`);
+    }
+
+    if (filter_last_contact) {
+      // Search by date pattern
+      conditions.push('DATE(c.last_contacted_at) = ?');
+      params.push(filter_last_contact);
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -121,7 +156,7 @@ router.get('/contacts', async (req, res) => {
     const countQuery = `SELECT COUNT(*) as total FROM contacts c ${whereClause}`;
     const [countResult] = await db.query(countQuery, params);
 
-    // Get contacts - Using string interpolation for LIMIT/OFFSET to avoid parameter binding issues
+    // Get contacts
     const contactsQuery = `
       SELECT 
         c.*,
@@ -148,7 +183,6 @@ router.get('/contacts', async (req, res) => {
       LIMIT ${parseInt(limit)} OFFSET ${parseInt(offset)}
     `;
 
-    // Use the same params array (without limit/offset since they're interpolated)
     const [contacts] = await db.query(contactsQuery, params);
 
     // Format phone numbers for display
@@ -869,6 +903,407 @@ async function previewExcelFile(filePath) {
     };
   }
 }
+
+router.post('/search-advanced', authenticateToken, async (req, res) => {
+  try {
+    const { 
+      campaign_id, 
+      criteria, 
+      page = 1, 
+      limit = 50 
+    } = req.body;
+
+    if (!criteria || criteria.length === 0) {
+      return res.json({ contacts: [], pagination: { total: 0, page: 1, limit, pages: 0 } });
+    }
+
+    // Build WHERE conditions
+    const conditions = [];
+    const params = [];
+
+    if (campaign_id) {
+      conditions.push('c.campaign_id = ?');
+      params.push(campaign_id);
+    }
+
+    // Process each search criterion
+    criteria.forEach((criterion, index) => {
+      const { field, operator, value } = criterion;
+      
+      if (!value || value.trim() === '') return;
+
+      // Handle different field types
+      if (field === 'any') {
+        // Search across all standard fields
+        conditions.push(`(
+          c.search_text LIKE ? OR 
+          c.phone_normalized LIKE ? OR
+          JSON_SEARCH(c.custom_data, 'all', ?) IS NOT NULL
+        )`);
+        const searchPattern = operator === 'equals' ? value : `%${value}%`;
+        params.push(searchPattern, searchPattern, value);
+      } 
+      else if (field.startsWith('custom.')) {
+        // Custom field search
+        const customFieldKey = field.replace('custom.', '');
+        
+        switch (operator) {
+          case 'equals':
+            conditions.push(`JSON_EXTRACT(c.custom_data, '$.${customFieldKey}') = ?`);
+            params.push(value);
+            break;
+          case 'contains':
+            conditions.push(`JSON_EXTRACT(c.custom_data, '$.${customFieldKey}') LIKE ?`);
+            params.push(`%${value}%`);
+            break;
+          case 'starts_with':
+            conditions.push(`JSON_EXTRACT(c.custom_data, '$.${customFieldKey}') LIKE ?`);
+            params.push(`${value}%`);
+            break;
+          case 'ends_with':
+            conditions.push(`JSON_EXTRACT(c.custom_data, '$.${customFieldKey}') LIKE ?`);
+            params.push(`%${value}`);
+            break;
+          case 'not_contains':
+            conditions.push(`(JSON_EXTRACT(c.custom_data, '$.${customFieldKey}') NOT LIKE ? OR JSON_EXTRACT(c.custom_data, '$.${customFieldKey}') IS NULL)`);
+            params.push(`%${value}%`);
+            break;
+        }
+      } 
+      else {
+        // Standard field search
+        let dbField = field;
+        if (field === 'phone') dbField = 'phone_normalized';
+        
+        switch (operator) {
+          case 'equals':
+            conditions.push(`c.${dbField} = ?`);
+            params.push(value);
+            break;
+          case 'contains':
+            conditions.push(`c.${dbField} LIKE ?`);
+            params.push(`%${value}%`);
+            break;
+          case 'starts_with':
+            conditions.push(`c.${dbField} LIKE ?`);
+            params.push(`${value}%`);
+            break;
+          case 'ends_with':
+            conditions.push(`c.${dbField} LIKE ?`);
+            params.push(`%${value}`);
+            break;
+          case 'not_contains':
+            conditions.push(`(c.${dbField} NOT LIKE ? OR c.${dbField} IS NULL)`);
+            params.push(`%${value}%`);
+            break;
+        }
+      }
+    });
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+
+    // Get total count
+    const countQuery = `SELECT COUNT(*) as total FROM contacts c ${whereClause}`;
+    const [countResult] = await db.query(countQuery, params);
+
+    // Get contacts
+    const contactsQuery = `
+      SELECT 
+        c.*,
+        c.phone_primary as phone_display,
+        cam.name as campaign_name,
+        u.username as assigned_to_name,
+        (
+          SELECT COUNT(*) 
+          FROM contact_interactions ci 
+          WHERE ci.contact_id = c.id
+        ) as interaction_count,
+        (
+          SELECT ci.created_at 
+          FROM contact_interactions ci 
+          WHERE ci.contact_id = c.id 
+          ORDER BY ci.created_at DESC 
+          LIMIT 1
+        ) as last_interaction
+      FROM contacts c
+      LEFT JOIN campaigns cam ON c.campaign_id = cam.id
+      LEFT JOIN users u ON c.assigned_to = u.id
+      ${whereClause}
+      ORDER BY c.created_at DESC
+      LIMIT ${parseInt(limit)} OFFSET ${parseInt(offset)}
+    `;
+
+    const [contacts] = await db.query(contactsQuery, params);
+
+    // Format response
+    contacts.forEach(contact => {
+      contact.phone_display = formatPhone(contact.phone_primary);
+      if (contact.custom_data) {
+        try {
+          contact.custom_data = typeof contact.custom_data === 'string' 
+            ? JSON.parse(contact.custom_data) 
+            : contact.custom_data;
+        } catch (e) {
+          contact.custom_data = {};
+        }
+      }
+    });
+
+    res.json({
+      contacts,
+      pagination: {
+        total: countResult[0].total,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        pages: Math.ceil(countResult[0].total / parseInt(limit))
+      }
+    });
+  } catch (error) {
+    console.error('Advanced search error:', error);
+    res.status(500).json({ message: 'Error performing search' });
+  }
+});
+
+// Add this custom fields search endpoint to routes/contacts-management.js
+
+// Search by custom fields
+router.post('/search-custom-fields', authenticateToken, async (req, res) => {
+  try {
+    const { 
+      campaign_id, 
+      custom_field_filters, 
+      page = 1, 
+      limit = 50,
+      include_standard_filters = {},
+      column_filters = {} // Add column filters support
+    } = req.body;
+
+    if (!campaign_id) {
+      return res.status(400).json({ message: 'Campaign ID is required' });
+    }
+
+    // Build WHERE conditions
+    const conditions = ['c.campaign_id = ?'];
+    const params = [campaign_id];
+
+    // Apply standard filters if provided
+    if (include_standard_filters.status) {
+      conditions.push('c.status = ?');
+      params.push(include_standard_filters.status);
+    }
+
+    if (include_standard_filters.assigned_to) {
+      conditions.push('c.assigned_to = ?');
+      params.push(include_standard_filters.assigned_to);
+    }
+
+    // Apply column filters (case-insensitive)
+    if (column_filters.name) {
+      conditions.push(`LOWER(CONCAT(IFNULL(c.first_name, ''), ' ', IFNULL(c.last_name, ''))) LIKE LOWER(?)`);
+      params.push(`%${column_filters.name}%`);
+    }
+
+    if (column_filters.phone) {
+      conditions.push('(c.phone_primary LIKE ? OR c.phone_normalized LIKE ?)');
+      params.push(`%${column_filters.phone}%`, `%${column_filters.phone}%`);
+    }
+
+    if (column_filters.email) {
+      conditions.push('LOWER(c.email) LIKE LOWER(?)');
+      params.push(`%${column_filters.email}%`);
+    }
+
+    if (column_filters.company) {
+      conditions.push('LOWER(c.company) LIKE LOWER(?)');
+      params.push(`%${column_filters.company}%`);
+    }
+
+    // Build custom field conditions (case-insensitive)
+    if (custom_field_filters && custom_field_filters.length > 0) {
+      const customConditions = [];
+      
+      custom_field_filters.forEach(filter => {
+        const { field, operator, value } = filter;
+        
+        if (!value || value.trim() === '') return;
+
+        switch (operator) {
+          case 'equals':
+            // Case-insensitive equals using LOWER
+            customConditions.push(`LOWER(JSON_UNQUOTE(JSON_EXTRACT(c.custom_data, '$.${field}'))) = LOWER(?)`);
+            params.push(value);
+            break;
+          case 'contains':
+            // Case-insensitive LIKE
+            customConditions.push(`LOWER(JSON_UNQUOTE(JSON_EXTRACT(c.custom_data, '$.${field}'))) LIKE LOWER(?)`);
+            params.push(`%${value}%`);
+            break;
+          case 'starts_with':
+            customConditions.push(`LOWER(JSON_UNQUOTE(JSON_EXTRACT(c.custom_data, '$.${field}'))) LIKE LOWER(?)`);
+            params.push(`${value}%`);
+            break;
+          case 'ends_with':
+            customConditions.push(`LOWER(JSON_UNQUOTE(JSON_EXTRACT(c.custom_data, '$.${field}'))) LIKE LOWER(?)`);
+            params.push(`%${value}`);
+            break;
+          case 'greater_than':
+            customConditions.push(`CAST(JSON_EXTRACT(c.custom_data, '$.${field}') AS DECIMAL) > ?`);
+            params.push(parseFloat(value));
+            break;
+          case 'less_than':
+            customConditions.push(`CAST(JSON_EXTRACT(c.custom_data, '$.${field}') AS DECIMAL) < ?`);
+            params.push(parseFloat(value));
+            break;
+          case 'is_empty':
+            customConditions.push(`(JSON_EXTRACT(c.custom_data, '$.${field}') IS NULL OR JSON_EXTRACT(c.custom_data, '$.${field}') = '' OR JSON_EXTRACT(c.custom_data, '$.${field}') = 'null')`);
+            break;
+          case 'is_not_empty':
+            customConditions.push(`(JSON_EXTRACT(c.custom_data, '$.${field}') IS NOT NULL AND JSON_EXTRACT(c.custom_data, '$.${field}') != '' AND JSON_EXTRACT(c.custom_data, '$.${field}') != 'null')`);
+            break;
+        }
+      });
+
+      if (customConditions.length > 0) {
+        conditions.push(`(${customConditions.join(' AND ')})`);
+      }
+    }
+
+    const whereClause = `WHERE ${conditions.join(' AND ')}`;
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+
+    // Get total count
+    const countQuery = `SELECT COUNT(*) as total FROM contacts c ${whereClause}`;
+    const [countResult] = await db.query(countQuery, params);
+
+    // Get contacts with custom fields
+    const contactsQuery = `
+      SELECT 
+        c.*,
+        c.phone_primary as phone_display,
+        cam.name as campaign_name,
+        u.username as assigned_to_name,
+        (
+          SELECT COUNT(*) 
+          FROM contact_interactions ci 
+          WHERE ci.contact_id = c.id
+        ) as interaction_count,
+        (
+          SELECT ci.created_at 
+          FROM contact_interactions ci 
+          WHERE ci.contact_id = c.id 
+          ORDER BY ci.created_at DESC 
+          LIMIT 1
+        ) as last_interaction
+      FROM contacts c
+      LEFT JOIN campaigns cam ON c.campaign_id = cam.id
+      LEFT JOIN users u ON c.assigned_to = u.id
+      ${whereClause}
+      ORDER BY c.created_at DESC
+      LIMIT ${parseInt(limit)} OFFSET ${parseInt(offset)}
+    `;
+
+    const [contacts] = await db.query(contactsQuery, params);
+
+    // Format response with emphasis on custom data
+    contacts.forEach(contact => {
+      contact.phone_display = formatPhone(contact.phone_primary);
+      if (contact.custom_data) {
+        try {
+          contact.custom_data = typeof contact.custom_data === 'string' 
+            ? JSON.parse(contact.custom_data) 
+            : contact.custom_data;
+        } catch (e) {
+          contact.custom_data = {};
+        }
+      } else {
+        contact.custom_data = {};
+      }
+      
+      // Add matched custom fields for highlighting
+      contact.matched_custom_fields = [];
+      if (custom_field_filters) {
+        custom_field_filters.forEach(filter => {
+          if (contact.custom_data[filter.field]) {
+            contact.matched_custom_fields.push({
+              field: filter.field,
+              value: contact.custom_data[filter.field]
+            });
+          }
+        });
+      }
+    });
+
+    res.json({
+      contacts,
+      pagination: {
+        total: countResult[0].total,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        pages: Math.ceil(countResult[0].total / parseInt(limit))
+      }
+    });
+  } catch (error) {
+    console.error('Custom fields search error:', error);
+    res.status(500).json({ message: 'Error searching custom fields' });
+  }
+});
+
+// Get all unique custom fields for a campaign
+router.get('/campaigns/:campaignId/custom-fields-list', authenticateToken, async (req, res) => {
+  try {
+    const { campaignId } = req.params;
+    
+    // Get a sample of contacts to extract custom field keys
+    const [contacts] = await db.query(`
+      SELECT custom_data 
+      FROM contacts 
+      WHERE campaign_id = ? 
+      AND custom_data IS NOT NULL 
+      AND custom_data != '{}'
+      LIMIT 100
+    `, [campaignId]);
+
+    const fieldSet = new Set();
+    const fieldTypes = {};
+
+    contacts.forEach(contact => {
+      try {
+        const customData = typeof contact.custom_data === 'string' 
+          ? JSON.parse(contact.custom_data) 
+          : contact.custom_data;
+        
+        Object.entries(customData).forEach(([key, value]) => {
+          fieldSet.add(key);
+          
+          // Detect field type
+          if (!fieldTypes[key]) {
+            if (!isNaN(value) && value !== '') {
+              fieldTypes[key] = 'number';
+            } else if (value === 'true' || value === 'false' || typeof value === 'boolean') {
+              fieldTypes[key] = 'boolean';
+            } else {
+              fieldTypes[key] = 'text';
+            }
+          }
+        });
+      } catch (e) {
+        // Skip invalid JSON
+      }
+    });
+
+    const fields = Array.from(fieldSet).map(field => ({
+      name: field,
+      type: fieldTypes[field] || 'text',
+      label: field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+    }));
+
+    res.json({ fields });
+  } catch (error) {
+    console.error('Error getting custom fields list:', error);
+    res.status(500).json({ message: 'Error getting custom fields list' });
+  }
+});
 
 // Preview CSV file
 async function previewCSVFile(filePath) {

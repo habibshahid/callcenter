@@ -237,202 +237,221 @@ export const api = {
       throw error;
     }
   },
-  
 
   // Campaigns
-getCampaigns: () =>
-  fetch(`${API_URL}/contacts-management/campaigns`, {
-    headers: getHeaders()
-  }).then(handleResponse),
+  getCampaigns: () =>
+    fetch(`${API_URL}/contacts-management/campaigns`, {
+      headers: getHeaders()
+    }).then(handleResponse),
 
-createCampaign: (campaignData) =>
-  fetch(`${API_URL}/contacts-management/campaigns`, {
-    method: 'POST',
-    headers: getHeaders(),
-    body: JSON.stringify(campaignData)
-  }).then(handleResponse),
+  createCampaign: (campaignData) =>
+    fetch(`${API_URL}/contacts-management/campaigns`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(campaignData)
+    }).then(handleResponse),
 
-// Contacts Management
-getContactsList: (params) => {
-  const queryString = new URLSearchParams(params).toString();
-  return fetch(`${API_URL}/contacts-management/contacts?${queryString}`, {
-    headers: getHeaders()
-  }).then(handleResponse);
-},
+  // Contacts Management
+  getContactsList: (params) => {
+    const queryString = new URLSearchParams(params).toString();
+    return fetch(`${API_URL}/contacts-management/contacts?${queryString}`, {
+      headers: getHeaders()
+    }).then(handleResponse);
+  },
 
-createContact: (contactData) =>
-  fetch(`${API_URL}/contacts-management/contacts`, {
-    method: 'POST',
-    headers: getHeaders(),
-    body: JSON.stringify(contactData)
-  }).then(handleResponse),
-
-updateContactDetails: (id, contactData) =>
-  fetch(`${API_URL}/contacts-management/contacts/${id}`, {
-    method: 'PUT',
-    headers: getHeaders(),
-    body: JSON.stringify(contactData)
-  }).then(handleResponse),
-
-deleteContact: (id) =>
-  fetch(`${API_URL}/contacts-management/contacts/${id}`, {
-    method: 'DELETE',
-    headers: getHeaders()
-  }).then(handleResponse),
-
-// Search
-searchContacts: (query, campaignId, limit = 10) => {
-  const params = new URLSearchParams({
-    q: query,
-    ...(campaignId && { campaign_id: campaignId }),
-    limit
-  });
-  return fetch(`${API_URL}/contacts-management/search?${params}`, {
-    headers: getHeaders()
-  }).then(handleResponse);
-},
-
-// Import/Export
-importContacts: (formData) =>
-  fetch(`${API_URL}/contacts-management/import`, {
-    method: 'POST',
-    headers: {
-      'Authorization': getHeaders().Authorization
-      // Don't set Content-Type, let browser set it for FormData
-    },
-    body: formData
-  }).then(handleResponse),
-
-getImportStatus: (jobId) =>
-  fetch(`${API_URL}/contacts-management/import/${jobId}`, {
-    headers: getHeaders()
-  }).then(handleResponse),
-
-exportContacts: (params) => {
-  const queryString = new URLSearchParams(params).toString();
-  return fetch(`${API_URL}/contacts-management/export?${queryString}`, {
-    headers: getHeaders()
-  }).then(response => {
-    if (!response.ok) throw new Error('Export failed');
-    return response.blob();
-  });
-},
-
-// Bulk operations
-bulkUpdateContacts: (contactIds, updates) =>
-  fetch(`${API_URL}/contacts-management/bulk-update`, {
-    method: 'POST',
-    headers: getHeaders(),
-    body: JSON.stringify({ contactIds, updates })
-  }).then(handleResponse),
-
-bulkDeleteContacts: (contactIds) =>
-  fetch(`${API_URL}/contacts-management/bulk-delete`, {
-    method: 'POST',
-    headers: getHeaders(),
-    body: JSON.stringify({ contactIds })
-  }).then(handleResponse),
-
-// Contact interactions
-addContactInteraction: (contactId, interaction) =>
-  fetch(`${API_URL}/contacts-management/contacts/${contactId}/interactions`, {
-    method: 'POST',
-    headers: getHeaders(),
-    body: JSON.stringify(interaction)
-  }).then(handleResponse),
-
-getContactDetails: (id) =>
-  fetch(`${API_URL}/contacts-management/contacts/${id}`, {
-    headers: getHeaders()
-  }).then(handleResponse),
-
-  // Enhanced import with field mapping
-importContactsEnhanced: (formData) =>
-  fetch(`${API_URL}/contacts-management/import-enhanced`, {
-    method: 'POST',
-    headers: {
-      'Authorization': getHeaders().Authorization
-    },
-    body: formData
-  }).then(handleResponse),
-
-// Bulk operations
-bulkUpdateContacts: (contactIds, updates) =>
-  fetch(`${API_URL}/contacts-management/bulk-update`, {
-    method: 'POST',
-    headers: getHeaders(),
-    body: JSON.stringify({ contactIds, updates })
-  }).then(handleResponse),
-
-bulkDeleteContacts: (contactIds) =>
-  fetch(`${API_URL}/contacts-management/bulk-delete`, {
-    method: 'POST',
-    headers: getHeaders(),
-    body: JSON.stringify({ contactIds })
-  }).then(handleResponse),
-
-bulkAssignContacts: (contactIds, assignTo) =>
-  fetch(`${API_URL}/contacts-management/bulk-assign`, {
-    method: 'POST',
-    headers: getHeaders(),
-    body: JSON.stringify({ contactIds, assignTo })
-  }).then(handleResponse),
-
-// Export with filters
-exportContacts: (params) => {
-  const queryString = new URLSearchParams(params).toString();
-  return fetch(`${API_URL}/contacts-management/export?${queryString}`, {
-    headers: getHeaders()
-  }).then(response => {
-    if (!response.ok) throw new Error('Export failed');
-    return response.blob();
-  });
-},
-
-// Get active agents for assignment
-getActiveAgents: () =>
-  fetch(`${API_URL}/dashboard/active-agents`, {
-    headers: getHeaders()
-  }).then(handleResponse),
-
-// Duplicate detection
-findDuplicates: (campaignId) =>
-  fetch(`${API_URL}/contacts-management/duplicates?campaign_id=${campaignId}`, {
-    headers: getHeaders()
-  }).then(handleResponse),
-
-mergeDuplicates: (keepId, mergeIds) =>
-  fetch(`${API_URL}/contacts-management/merge`, {
-    method: 'POST',
-    headers: getHeaders(),
-    body: JSON.stringify({ keepId, mergeIds })
-  }).then(handleResponse),
-
-// Custom fields management
-getCampaignFields: (campaignId) =>
-  fetch(`${API_URL}/contacts-management/campaigns/${campaignId}/fields`, {
-    headers: getHeaders()
-  }).then(handleResponse),
-
-updateCampaignFields: (campaignId, fields) =>
-  fetch(`${API_URL}/contacts-management/campaigns/${campaignId}/fields`, {
-    method: 'PUT',
-    headers: getHeaders(),
-    body: JSON.stringify({ fields })
-  }).then(handleResponse),
+  createContact: (contactData) =>
+    fetch(`${API_URL}/contacts-management/contacts`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(contactData)
+    }).then(handleResponse),
 
   updateContactDetails: (id, contactData) =>
-  fetch(`${API_URL}/contacts-management/contacts/${id}`, {
-    method: 'PUT',
-    headers: getHeaders(),
-    body: JSON.stringify(contactData)
-  }).then(handleResponse),
+    fetch(`${API_URL}/contacts-management/contacts/${id}`, {
+      method: 'PUT',
+      headers: getHeaders(),
+      body: JSON.stringify(contactData)
+    }).then(handleResponse),
 
-deleteContact: (id) =>
-  fetch(`${API_URL}/contacts-management/contacts/${id}`, {
-    method: 'DELETE',
-    headers: getHeaders()
-  }).then(handleResponse),
+  deleteContact: (id) =>
+    fetch(`${API_URL}/contacts-management/contacts/${id}`, {
+      method: 'DELETE',
+      headers: getHeaders()
+    }).then(handleResponse),
+
+  // Search
+  searchContacts: (query, campaignId, limit = 10) => {
+    const params = new URLSearchParams({
+      q: query,
+      ...(campaignId && { campaign_id: campaignId }),
+      limit
+    });
+    return fetch(`${API_URL}/contacts-management/search?${params}`, {
+      headers: getHeaders()
+    }).then(handleResponse);
+  },
+
+  // Import/Export
+  importContacts: (formData) =>
+    fetch(`${API_URL}/contacts-management/import`, {
+      method: 'POST',
+      headers: {
+        'Authorization': getHeaders().Authorization
+        // Don't set Content-Type, let browser set it for FormData
+      },
+      body: formData
+    }).then(handleResponse),
+
+  getImportStatus: (jobId) =>
+    fetch(`${API_URL}/contacts-management/import/${jobId}`, {
+      headers: getHeaders()
+    }).then(handleResponse),
+
+  exportContacts: (params) => {
+    const queryString = new URLSearchParams(params).toString();
+    return fetch(`${API_URL}/contacts-management/export?${queryString}`, {
+      headers: getHeaders()
+    }).then(response => {
+      if (!response.ok) throw new Error('Export failed');
+      return response.blob();
+    });
+  },
+
+  // Bulk operations
+  bulkUpdateContacts: (contactIds, updates) =>
+    fetch(`${API_URL}/contacts-management/bulk-update`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ contactIds, updates })
+    }).then(handleResponse),
+
+  bulkDeleteContacts: (contactIds) =>
+    fetch(`${API_URL}/contacts-management/bulk-delete`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ contactIds })
+    }).then(handleResponse),
+
+  // Contact interactions
+  addContactInteraction: (contactId, interaction) =>
+    fetch(`${API_URL}/contacts-management/contacts/${contactId}/interactions`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(interaction)
+    }).then(handleResponse),
+
+  getContactDetails: (id) =>
+    fetch(`${API_URL}/contacts-management/contacts/${id}`, {
+      headers: getHeaders()
+    }).then(handleResponse),
+
+  // Enhanced import with field mapping
+  importContactsEnhanced: (formData) =>
+    fetch(`${API_URL}/contacts-management/import-enhanced`, {
+      method: 'POST',
+      headers: {
+        'Authorization': getHeaders().Authorization
+      },
+      body: formData
+    }).then(handleResponse),
+
+  // Bulk operations
+  bulkUpdateContacts: (contactIds, updates) =>
+    fetch(`${API_URL}/contacts-management/bulk-update`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ contactIds, updates })
+    }).then(handleResponse),
+
+  bulkDeleteContacts: (contactIds) =>
+    fetch(`${API_URL}/contacts-management/bulk-delete`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ contactIds })
+    }).then(handleResponse),
+
+  bulkAssignContacts: (contactIds, assignTo) =>
+    fetch(`${API_URL}/contacts-management/bulk-assign`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ contactIds, assignTo })
+    }).then(handleResponse),
+
+  // Export with filters
+  exportContacts: (params) => {
+    const queryString = new URLSearchParams(params).toString();
+    return fetch(`${API_URL}/contacts-management/export?${queryString}`, {
+      headers: getHeaders()
+    }).then(response => {
+      if (!response.ok) throw new Error('Export failed');
+      return response.blob();
+    });
+  },
+
+  // Get active agents for assignment
+  getActiveAgents: () =>
+    fetch(`${API_URL}/dashboard/active-agents`, {
+      headers: getHeaders()
+    }).then(handleResponse),
+
+  // Duplicate detection
+  findDuplicates: (campaignId) =>
+    fetch(`${API_URL}/contacts-management/duplicates?campaign_id=${campaignId}`, {
+      headers: getHeaders()
+    }).then(handleResponse),
+
+  mergeDuplicates: (keepId, mergeIds) =>
+    fetch(`${API_URL}/contacts-management/merge`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ keepId, mergeIds })
+    }).then(handleResponse),
+
+  // Custom fields management
+  getCampaignFields: (campaignId) =>
+    fetch(`${API_URL}/contacts-management/campaigns/${campaignId}/fields`, {
+      headers: getHeaders()
+    }).then(handleResponse),
+
+  updateCampaignFields: (campaignId, fields) =>
+    fetch(`${API_URL}/contacts-management/campaigns/${campaignId}/fields`, {
+      method: 'PUT',
+      headers: getHeaders(),
+      body: JSON.stringify({ fields })
+    }).then(handleResponse),
+
+  updateContactDetails: (id, contactData) =>
+    fetch(`${API_URL}/contacts-management/contacts/${id}`, {
+      method: 'PUT',
+      headers: getHeaders(),
+      body: JSON.stringify(contactData)
+    }).then(handleResponse),
+
+  deleteContact: (id) =>
+    fetch(`${API_URL}/contacts-management/contacts/${id}`, {
+      method: 'DELETE',
+      headers: getHeaders()
+    }).then(handleResponse),
+
+  searchContactsAdvanced: (params) =>
+    fetch(`${API_URL}/contacts-management/search-advanced`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(params)
+    }).then(handleResponse),
+
+  searchContactsByCustomFields: (params) =>
+    fetch(`${API_URL}/contacts-management/search-custom-fields`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(params)
+    }).then(handleResponse),
+
+  // Get list of custom fields for a campaign
+  getCampaignCustomFields: (campaignId) =>
+    fetch(`${API_URL}/contacts-management/campaigns/${campaignId}/custom-fields-list`, {
+      headers: getHeaders()
+    }).then(handleResponse),
 };
 
 export default api;
