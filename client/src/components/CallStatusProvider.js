@@ -5,8 +5,8 @@ import { useCall } from '../context/CallContext';
 
 export default function CallStatusProvider() {
   const { activeCall } = useCall();
-
-  if (!activeCall || ['terminated', 'failed', 'rejected'].includes(activeCall.status)) {
+  
+  if (!activeCall || ['Terminated', 'terminated', 'failed', 'rejected', 'active'].includes(activeCall.status)) {
     return null;
   }
 

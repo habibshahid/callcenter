@@ -73,18 +73,35 @@ export default function ContactsManagement() {
 
   // ADD THIS EFFECT TO TRACK ACTIVE CALLS
   useEffect(() => {
-    if (activeCall && activeCall.status === 'active' && activeCall.contactId) {
-      setActiveCallContactId(activeCall.contactId);
-      setShowCallNotes(true);
-    } else if (!activeCall || ['terminated', 'failed', 'rejected'].includes(activeCall.status)) {
+    if (activeCall) {
+      if (activeCall.status === 'active') {
+        // Show call notes when call becomes active
+        // Use the stored activeCallContactId if contactId is not in activeCall
+        if (activeCallContactId || activeCall.contactId) {
+          setShowCallNotes(true);
+        }
+      } else if (['Terminated', 'terminated', 'failed', 'rejected', 'Failed', 'Rejected'].includes(activeCall.status)) {
+        // Call ended
+        setCallingNumbers(new Set());
+        // Keep notes panel open briefly after call ends for auto-save
+        if (showCallNotes) {
+          setTimeout(() => {
+            setShowCallNotes(false);
+            setActiveCallContactId(null);
+          }, 3000);
+        }
+      }
+    } else {
+      // No active call
       setCallingNumbers(new Set());
-      setActiveCallContactId(null);
-      // Keep notes panel open briefly after call ends for auto-save
       if (showCallNotes) {
-        setTimeout(() => setShowCallNotes(false), 3000);
+        setTimeout(() => {
+          setShowCallNotes(false);
+          setActiveCallContactId(null);
+        }, 3000);
       }
     }
-  }, [activeCall]);
+  }, [activeCall, activeCallContactId, showCallNotes]);
 
   // Load initial data
   useEffect(() => {
@@ -460,7 +477,7 @@ export default function ContactsManagement() {
   // UPDATED handleCall function
   const handleCall = async (phoneNumber, contactId) => {
     // Check if any call is in progress
-    if (activeCall && !['terminated', 'failed', 'rejected'].includes(activeCall.status)) {
+    if (activeCall && !['Terminated', 'Failed', 'Rejected', 'terminated', 'failed', 'rejected'].includes(activeCall.status)) {
       alert('A call is already in progress. Please end the current call first.');
       return;
     }
@@ -581,15 +598,15 @@ export default function ContactsManagement() {
       </div>
 
       {/* ADD THIS: Call status indicator */}
-      {(activeCall && !['terminated', 'failed', 'rejected'].includes(activeCall.status)) && (
+      {(activeCall && !['Terminated', 'Failed', 'Rejected', 'terminated', 'failed', 'rejected', 'active'].includes(activeCall.status)) && (
         <div className="position-fixed top-0 start-50 translate-middle-x mt-5 pt-3" style={{ zIndex: 1050 }}>
           <div className="alert alert-warning d-flex align-items-center shadow">
             <div className="spinner-border spinner-border-sm me-2" />
             <span>
               Call in progress with {activeCall.number}
               {activeCall.status === 'trying' && ' - Connecting...'}
+              {activeCall.status === 'connecting' && ' - Establishing connection...'}
               {activeCall.status === 'ringing' && ' - Ringing...'}
-              {activeCall.status === 'active' && ' - Active'}
             </span>
           </div>
         </div>
@@ -1021,7 +1038,7 @@ export default function ContactsManagement() {
                             className={`btn ${
                               callingNumbers.has(contact.phone_primary) 
                                 ? 'btn-warning' 
-                                : activeCall && !['terminated', 'failed', 'rejected'].includes(activeCall.status)
+                                : activeCall && !['Terminated', 'Failed', 'Rejected', 'terminated', 'failed', 'rejected'].includes(activeCall.status)
                                   ? 'btn-secondary'
                                   : 'btn-outline-primary'
                             }`}
@@ -1031,12 +1048,12 @@ export default function ContactsManagement() {
                             }}
                             disabled={
                               callingNumbers.has(contact.phone_primary) ||
-                              (activeCall && !['terminated', 'failed', 'rejected'].includes(activeCall.status))
+                              (activeCall && !['Terminated', 'Failed', 'Rejected', 'terminated', 'failed', 'rejected'].includes(activeCall.status))
                             }
                             title={
                               callingNumbers.has(contact.phone_primary) 
                                 ? 'Calling...' 
-                                : activeCall && !['terminated', 'failed', 'rejected'].includes(activeCall.status)
+                                : activeCall && !['Terminated', 'Failed', 'Rejected', 'terminated', 'failed', 'rejected'].includes(activeCall.status)
                                   ? 'Call in progress'
                                   : 'Call this contact'
                             }

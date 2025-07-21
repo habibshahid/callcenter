@@ -186,3 +186,65 @@
     font-size: 0.75rem;
   }
 }
+
+/* Add this CSS to your ContactsManagement.css or global styles */
+
+/* Call Notes Panel Positioning */
+.call-notes-panel {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 400px;
+  max-height: 500px;
+  overflow-y: auto;
+  z-index: 1040;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.08);
+  animation: slideInRight 0.3s ease-out;
+}
+
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .call-notes-panel {
+    width: 90%;
+    right: 5%;
+    left: 5%;
+  }
+}
+
+/* Ensure the panel stays above other content */
+.call-notes-panel .card {
+  background: white;
+  border: 1px solid #dee2e6;
+}
+
+.call-notes-panel .card-header {
+  background-color: #f8f9fa;
+  border-bottom: 1px solid #dee2e6;
+}
+
+/* Animation for when panel closes */
+.call-notes-panel.closing {
+  animation: slideOutRight 0.3s ease-in forwards;
+}
+
+@keyframes slideOutRight {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+}

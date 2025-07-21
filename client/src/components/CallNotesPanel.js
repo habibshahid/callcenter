@@ -20,7 +20,7 @@ export default function CallNotesPanel({ contactId, onClose }) {
 
   // Auto-save when call ends
   useEffect(() => {
-    if (activeCall?.status === 'terminated' && (notes || selectedTags.length > 0 || selectedDisposition)) {
+    if (['Terminated', 'terminated', 'Rejected', 'rejected', 'Failed', 'failed'].includes(activeCall?.status) && (notes || selectedTags.length > 0 || selectedDisposition)) {
       handleSave(true);
     }
   }, [activeCall?.status]);

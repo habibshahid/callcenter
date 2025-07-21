@@ -76,7 +76,7 @@ export const CallProvider = ({ children }) => {
         }
       }
 
-      if (['terminated', 'failed', 'rejected'].includes(callStatus.status)) {
+      if (['Terminated', 'Failed', 'Rejected', 'terminated', 'failed', 'rejected'].includes(callStatus.status)) {
         const endTime = new Date();
         const duration = callDuration;
         
@@ -149,25 +149,18 @@ export const CallProvider = ({ children }) => {
     };
   }, [activeCall, callDuration, callStartTime]);
 
-  const handleDial = async (number) => {
+  const handleDial = async (number, contactId = null) => {
     try {
-      // First, try to find contact information
-      const contact = await api.lookupContact(number);
-      if (contact) {
-        setSelectedContact(contact);
-      } else {
-        setSelectedContact({
-          phone: number,
-          isTemporary: true
-        });
+      // Store the contact ID before making the call
+      if (contactId) {
+        // This will be used when the call status updates
+        SipService.pendingContactId = contactId;
       }
       
-      // Make the call
       await SipService.makeCall(number);
     } catch (error) {
       console.error('Error making call:', error);
-      // Show error notification
-      alert(`Failed to call ${number}: ${error.message}`);
+      throw error;
     }
   };
 

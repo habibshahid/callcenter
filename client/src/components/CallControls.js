@@ -21,7 +21,7 @@ const CallControls = ({
 
   // Reset input when call ends completely
   useEffect(() => {
-    if (!activeCall || activeCall.status === 'terminated') {
+    if (!activeCall || ['Terminated', 'terminated', 'Rejected', 'rejected', 'Failed', 'failed'].includes(activeCall.status)){ //activeCall.status === 'terminated') {
       // Add a small delay to ensure smooth transition
       const timer = setTimeout(() => {
         setInputNumber('');
