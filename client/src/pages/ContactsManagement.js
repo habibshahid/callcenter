@@ -1,4 +1,4 @@
-// client/src/pages/ContactsManagement.js
+// client/src/pages/ContactsManagement.js - Updated section with proper imports
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Search, Upload, Download, Phone, Mail, Filter, Plus, Edit, 
@@ -6,7 +6,7 @@ import {
   Trash2, UserCheck, Tag, RefreshCw, FileSpreadsheet, Save, Database, X
 } from 'lucide-react';
 import { api } from '../services/api';
-import { useCall } from '../context/CallContext';
+import { useCall } from '../context/CallContext'; // ADD THIS IMPORT
 import { debounce } from 'lodash';
 import EnhancedImportModal from '../components/EnhancedImportModal';
 import DuplicateManager from '../components/DuplicateManager';
@@ -15,10 +15,12 @@ import EditContactModal from '../components/EditContactModal';
 import ViewContactModal from '../components/ViewContactModal';
 import CustomFieldsSearchModal from '../components/CustomFieldsSearchModal';
 import CustomFieldsDisplay from '../components/CustomFieldsDisplay';
+import CallNotesPanel from '../components/CallNotesPanel'; // ADD THIS IMPORT
 import '../styles/ContactsManagement.css';
 
 export default function ContactsManagement() {
-  const { handleDial } = useCall();
+  // Get activeCall and handleDial from CallContext
+  const { handleDial, activeCall } = useCall(); // ADD THIS LINE
   
   // State
   const [contacts, setContacts] = useState([]);
@@ -63,6 +65,26 @@ export default function ContactsManagement() {
   const [showCustomFieldsSearch, setShowCustomFieldsSearch] = useState(false);
   const [customFieldsSearchActive, setCustomFieldsSearchActive] = useState(false);
   const [customFieldsFilters, setCustomFieldsFilters] = useState(null);
+
+  // ADD THESE NEW STATE VARIABLES FOR CALL TRACKING
+  const [callingNumbers, setCallingNumbers] = useState(new Set());
+  const [showCallNotes, setShowCallNotes] = useState(false);
+  const [activeCallContactId, setActiveCallContactId] = useState(null);
+
+  // ADD THIS EFFECT TO TRACK ACTIVE CALLS
+  useEffect(() => {
+    if (activeCall && activeCall.status === 'active' && activeCall.contactId) {
+      setActiveCallContactId(activeCall.contactId);
+      setShowCallNotes(true);
+    } else if (!activeCall || ['terminated', 'failed', 'rejected'].includes(activeCall.status)) {
+      setCallingNumbers(new Set());
+      setActiveCallContactId(null);
+      // Keep notes panel open briefly after call ends for auto-save
+      if (showCallNotes) {
+        setTimeout(() => setShowCallNotes(false), 3000);
+      }
+    }
+  }, [activeCall]);
 
   // Load initial data
   useEffect(() => {
@@ -435,8 +457,39 @@ export default function ContactsManagement() {
     }
   };
 
-  const handleCall = (phoneNumber) => {
-    handleDial(phoneNumber);
+  // UPDATED handleCall function
+  const handleCall = async (phoneNumber, contactId) => {
+    // Check if any call is in progress
+    if (activeCall && !['terminated', 'failed', 'rejected'].includes(activeCall.status)) {
+      alert('A call is already in progress. Please end the current call first.');
+      return;
+    }
+
+    // Check if this number is already being dialed
+    if (callingNumbers.has(phoneNumber)) {
+      return;
+    }
+
+    try {
+      // Add to calling numbers set
+      setCallingNumbers(prev => new Set([...prev, phoneNumber]));
+      
+      // Store the contact ID for notes panel
+      if (contactId) {
+        setActiveCallContactId(contactId);
+      }
+      
+      await handleDial(phoneNumber);
+    } catch (error) {
+      console.error('Error making call:', error);
+      alert(`Failed to call ${phoneNumber}`);
+      // Remove from calling numbers on error
+      setCallingNumbers(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(phoneNumber);
+        return newSet;
+      });
+    }
   };
 
   const handleSelectAll = (e) => {
@@ -526,6 +579,21 @@ export default function ContactsManagement() {
           </div>
         </div>
       </div>
+
+      {/* ADD THIS: Call status indicator */}
+      {(activeCall && !['terminated', 'failed', 'rejected'].includes(activeCall.status)) && (
+        <div className="position-fixed top-0 start-50 translate-middle-x mt-5 pt-3" style={{ zIndex: 1050 }}>
+          <div className="alert alert-warning d-flex align-items-center shadow">
+            <div className="spinner-border spinner-border-sm me-2" />
+            <span>
+              Call in progress with {activeCall.number}
+              {activeCall.status === 'trying' && ' - Connecting...'}
+              {activeCall.status === 'ringing' && ' - Ringing...'}
+              {activeCall.status === 'active' && ' - Active'}
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Custom Fields Search Indicator */}
       {customFieldsSearchActive && (
@@ -874,7 +942,7 @@ export default function ContactsManagement() {
                           className="text-decoration-none"
                           onClick={(e) => {
                             e.preventDefault();
-                            handleCall(contact.phone_primary);
+                            handleCall(contact.phone_primary, contact.id);
                           }}
                         >
                           <Phone size={14} className="me-1" />
@@ -917,6 +985,7 @@ export default function ContactsManagement() {
                       </td>
                       <td>{contact.assigned_to_name || <span className="text-muted">Unassigned</span>}</td>
                       <td>
+                        {/* UPDATED ACTIONS TD */}
                         <div className="btn-group btn-group-sm">
                           <button 
                             className="btn btn-outline-secondary"
@@ -949,14 +1018,37 @@ export default function ContactsManagement() {
                             <Trash2 size={14} />
                           </button>
                           <button 
-                            className="btn btn-outline-primary"
+                            className={`btn ${
+                              callingNumbers.has(contact.phone_primary) 
+                                ? 'btn-warning' 
+                                : activeCall && !['terminated', 'failed', 'rejected'].includes(activeCall.status)
+                                  ? 'btn-secondary'
+                                  : 'btn-outline-primary'
+                            }`}
                             onClick={(e) => {
                               e.stopPropagation();
-                              handleCall(contact.phone_primary);
+                              handleCall(contact.phone_primary, contact.id);
                             }}
-                            title="Call this contact"
+                            disabled={
+                              callingNumbers.has(contact.phone_primary) ||
+                              (activeCall && !['terminated', 'failed', 'rejected'].includes(activeCall.status))
+                            }
+                            title={
+                              callingNumbers.has(contact.phone_primary) 
+                                ? 'Calling...' 
+                                : activeCall && !['terminated', 'failed', 'rejected'].includes(activeCall.status)
+                                  ? 'Call in progress'
+                                  : 'Call this contact'
+                            }
                           >
-                            <Phone size={14} />
+                            {callingNumbers.has(contact.phone_primary) ? (
+                              <>
+                                <span className="spinner-border spinner-border-sm me-1" />
+                                <Phone size={14} />
+                              </>
+                            ) : (
+                              <Phone size={14} />
+                            )}
                           </button>
                         </div>
                       </td>
@@ -1019,6 +1111,14 @@ export default function ContactsManagement() {
           </div>
         )}
       </div>
+
+      {/* ADD THIS: Call Notes Panel */}
+      {showCallNotes && activeCallContactId && (
+        <CallNotesPanel 
+          contactId={activeCallContactId}
+          onClose={() => setShowCallNotes(false)}
+        />
+      )}
 
       {/* Modals */}
       {showImportModal && (

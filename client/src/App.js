@@ -12,6 +12,7 @@ import { CallProvider } from './context/CallContext';
 import ContactsManagement from './pages/ContactsManagement';
 import IncomingCallNotification from './components/IncomingCallNotification';
 import RealTimeSearch from './components/RealTimeSearch';
+import CallStatusProvider from './components/CallStatusProvider';
 import 'bootstrap/dist/css/bootstrap.min.css';
 
 const PrivateLayout = ({ children }) => {
@@ -88,6 +89,7 @@ export default function App() {
             />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
+          <CallStatusProvider />
         </BrowserRouter>
       </CallProvider>
     </AppProvider>

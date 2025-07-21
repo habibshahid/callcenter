@@ -19,16 +19,26 @@ const CallControls = ({
   const [showDialer, setShowDialer] = useState(false);
   const [inputNumber, setInputNumber] = useState('');
 
+  // Reset input when call ends completely
   useEffect(() => {
-    if (!activeCall) {
-      setInputNumber('');
+    if (!activeCall || activeCall.status === 'terminated') {
+      // Add a small delay to ensure smooth transition
+      const timer = setTimeout(() => {
+        setInputNumber('');
+      }, 500);
+      return () => clearTimeout(timer);
     }
   }, [activeCall]);
 
   const handleKeyPress = (e) => {
-    if (e.key === 'Enter' && inputNumber.trim()) {
+    if (e.key === 'Enter' && inputNumber.trim() && !activeCall) {
       onDial(inputNumber.trim());
-      setInputNumber('');
+    }
+  };
+
+  const handleDialClick = () => {
+    if (inputNumber.trim() && !activeCall) {
+      onDial(inputNumber.trim());
     }
   };
 
@@ -49,6 +59,9 @@ const CallControls = ({
         return 'text-danger';
     }
   };
+
+  // Check if we're in a call state that should block new calls
+  const isCallActive = activeCall && !['terminated', 'failed', 'rejected'].includes(activeCall.status);
 
   return (
     <div className="d-flex align-items-center gap-2">
@@ -77,7 +90,7 @@ const CallControls = ({
 
       {/* Call Controls */}
       <div className="bg-light rounded-pill px-2 py-1 d-flex align-items-center gap-2">
-        {activeCall ? (
+        {isCallActive ? (
           <>
             <span className="text-muted small">
               {activeCall.number} - {activeCall.status === 'active' ? formatTime(callDuration) : activeCall.status}
@@ -133,20 +146,32 @@ const CallControls = ({
               onChange={(e) => setInputNumber(e.target.value)}
               onKeyPress={handleKeyPress}
               style={{ width: '150px' }}
+              disabled={sipStatus !== 'registered'}
             />
             <button
               className="btn btn-link btn-sm p-0"
               onClick={() => setShowDialer(true)}
               title="Open Dialpad"
+              disabled={sipStatus !== 'registered'}
             >
               <Hash size={18} />
             </button>
+            {inputNumber.trim() && (
+              <button
+                className="btn btn-link btn-sm p-0 text-success"
+                onClick={handleDialClick}
+                title="Call"
+                disabled={sipStatus !== 'registered'}
+              >
+                <Phone size={18} />
+              </button>
+            )}
           </div>
         )}
       </div>
 
       {/* Dialer Dropdown */}
-      {showDialer && (
+      {showDialer && !isCallActive && (
         <div className="position-absolute" style={{ top: '100%', zIndex: 1000 }}>
           <Dialer 
             onClose={() => setShowDialer(false)} 
