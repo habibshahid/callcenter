@@ -1,0 +1,81 @@
+/* ContactsManagement.css */
+
+/* Make table rows clickable */
+.table tbody tr {
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.table tbody tr:hover {
+  background-color: rgba(0, 123, 255, 0.08) !important;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Active/selected rows */
+.table tbody tr.table-active {
+  background-color: rgba(0, 123, 255, 0.15) !important;
+}
+
+/* Don't show pointer cursor on action buttons and checkboxes */
+.table tbody tr .btn-group,
+.table tbody tr input[type="checkbox"] {
+  cursor: default;
+}
+
+/* Prevent row hover effect when hovering on buttons */
+.table tbody tr:has(.btn:hover) {
+  transform: none;
+  box-shadow: none;
+}
+
+/* Contact status badges */
+.badge.bg-primary { background-color: #0d6efd !important; }
+.badge.bg-info { background-color: #0dcaf0 !important; }
+.badge.bg-success { background-color: #198754 !important; }
+.badge.bg-warning { background-color: #ffc107 !important; color: #000 !important; }
+.badge.bg-danger { background-color: #dc3545 !important; }
+.badge.bg-secondary { background-color: #6c757d !important; }
+
+/* Timeline styles for contact history */
+.timeline .card {
+  position: relative;
+  border-left: 3px solid #0d6efd;
+}
+
+.timeline .card::before {
+  content: '';
+  position: absolute;
+  left: -8px;
+  top: 20px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background-color: #0d6efd;
+  border: 2px solid #fff;
+}
+
+/* Modal animations */
+.modal {
+  animation: fadeIn 0.2s;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.modal-dialog {
+  animation: slideIn 0.3s;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateY(-50px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}

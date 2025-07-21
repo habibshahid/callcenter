@@ -420,6 +420,19 @@ updateCampaignFields: (campaignId, fields) =>
     headers: getHeaders(),
     body: JSON.stringify({ fields })
   }).then(handleResponse),
+
+  updateContactDetails: (id, contactData) =>
+  fetch(`${API_URL}/contacts-management/contacts/${id}`, {
+    method: 'PUT',
+    headers: getHeaders(),
+    body: JSON.stringify(contactData)
+  }).then(handleResponse),
+
+deleteContact: (id) =>
+  fetch(`${API_URL}/contacts-management/contacts/${id}`, {
+    method: 'DELETE',
+    headers: getHeaders()
+  }).then(handleResponse),
 };
 
 export default api;

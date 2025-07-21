@@ -9,8 +9,12 @@ const xss = require('xss-clean');
 const sanitize = require('express-mongo-sanitize');
 const { pool, testConnection } = require('./config/database');
 const routes = require('./routes');
+const setupUploadsDirectory = require('./utils/setupUploads');
 
 const app = express();
+
+// Setup uploads directory
+setupUploadsDirectory();
 
 // Security middleware
 app.use(helmet({

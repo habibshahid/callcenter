@@ -11,6 +11,7 @@ export default function EnhancedImportModal({ campaigns, onClose, onImportComple
   const [fieldMapping, setFieldMapping] = useState({});
   const [importing, setImporting] = useState(false);
   const [importStatus, setImportStatus] = useState(null);
+  const [error, setError] = useState(null);
 
   // Standard fields that can be mapped
   const standardFields = [
@@ -28,6 +29,7 @@ export default function EnhancedImportModal({ campaigns, onClose, onImportComple
       return;
     }
 
+    setError(null);
     const formData = new FormData();
     formData.append('file', file);
     formData.append('campaign_id', campaignId);
@@ -35,14 +37,34 @@ export default function EnhancedImportModal({ campaigns, onClose, onImportComple
     try {
       const result = await api.importContactsEnhanced(formData);
       
+      console.log('Import API Response:', result);
+      
       if (result.requiresMapping) {
-        setPreview(result);
+        // Validate the response structure
+        if (!result.headers || !Array.isArray(result.headers)) {
+          throw new Error('Invalid file structure - no headers found');
+        }
+        
+        // Create a properly structured preview object
+        const validatedPreview = {
+          headers: result.headers,
+          rows: Array.isArray(result.rows) ? result.rows : [],
+          totalRows: result.totalRows || 0
+        };
+        
+        console.log('Validated Preview:', validatedPreview);
+        
+        if (validatedPreview.headers.length === 0) {
+          throw new Error('The uploaded file appears to be empty');
+        }
+        
+        setPreview(validatedPreview);
         setStep(2);
         
         // Auto-map common field names
         const autoMapping = {};
-        result.headers.forEach(header => {
-          const lowerHeader = header.toLowerCase();
+        validatedPreview.headers.forEach(header => {
+          const lowerHeader = header.toLowerCase().trim();
           if (lowerHeader.includes('phone') || lowerHeader.includes('mobile') || lowerHeader.includes('cell')) {
             autoMapping[header] = 'phone_primary';
           } else if (lowerHeader === 'first name' || lowerHeader === 'firstname' || lowerHeader === 'fname') {
@@ -56,10 +78,13 @@ export default function EnhancedImportModal({ campaigns, onClose, onImportComple
           }
         });
         setFieldMapping(autoMapping);
+      } else if (result.message) {
+        throw new Error(result.message);
       }
     } catch (error) {
       console.error('Upload error:', error);
-      alert('Error uploading file');
+      setError(error.message || 'Error uploading file');
+      alert(error.message || 'Error uploading file');
     }
   };
 
@@ -73,6 +98,7 @@ export default function EnhancedImportModal({ campaigns, onClose, onImportComple
 
     setImporting(true);
     setStep(3);
+    setError(null);
 
     const formData = new FormData();
     formData.append('file', file);
@@ -81,13 +107,16 @@ export default function EnhancedImportModal({ campaigns, onClose, onImportComple
 
     try {
       const result = await api.importContactsEnhanced(formData);
-      setImportStatus(result);
       
-      // Poll for import status
-      pollImportStatus(result.jobId);
+      if (result.jobId) {
+        setImportStatus(result);
+        pollImportStatus(result.jobId);
+      } else {
+        throw new Error('No job ID returned from import');
+      }
     } catch (error) {
       console.error('Import error:', error);
-      alert('Error importing file');
+      setError(error.message || 'Error importing file');
       setImporting(false);
     }
   };
@@ -108,6 +137,7 @@ export default function EnhancedImportModal({ campaigns, onClose, onImportComple
         }
       } catch (error) {
         console.error('Error checking import status:', error);
+        setError('Error checking import status');
         setImporting(false);
       }
     };
@@ -120,6 +150,34 @@ export default function EnhancedImportModal({ campaigns, onClose, onImportComple
       ...prev,
       [header]: value
     }));
+  };
+
+  const getSampleData = (rowIndex, columnIndex) => {
+    try {
+      if (!preview || !preview.rows || !Array.isArray(preview.rows)) {
+        return '(no data)';
+      }
+      
+      const row = preview.rows[rowIndex];
+      if (!row || !Array.isArray(row)) {
+        return '(no data)';
+      }
+      
+      const value = row[columnIndex];
+      if (value === null || value === undefined || value === '') {
+        return '(empty)';
+      }
+      
+      const stringValue = String(value);
+      if (stringValue.length > 50) {
+        return stringValue.substring(0, 47) + '...';
+      }
+      
+      return stringValue;
+    } catch (e) {
+      console.error('Error getting sample data:', e);
+      return '(error)';
+    }
   };
 
   return (
@@ -139,7 +197,21 @@ export default function EnhancedImportModal({ campaigns, onClose, onImportComple
               disabled={importing}
             />
           </div>
+          
           <div className="modal-body">
+            {/* Error Display */}
+            {error && (
+              <div className="alert alert-danger alert-dismissible" role="alert">
+                <AlertCircle size={18} className="me-2" />
+                {error}
+                <button 
+                  type="button" 
+                  className="btn-close" 
+                  onClick={() => setError(null)}
+                />
+              </div>
+            )}
+
             {/* Step 1: Upload File */}
             {step === 1 && (
               <>
@@ -178,11 +250,21 @@ export default function EnhancedImportModal({ campaigns, onClose, onImportComple
                     {file.name} ({(file.size / 1024).toFixed(2)} KB)
                   </div>
                 )}
+
+                <div className="alert alert-secondary">
+                  <h6>File Requirements:</h6>
+                  <ul className="mb-0">
+                    <li>Must have a header row with column names</li>
+                    <li>Phone number column is required</li>
+                    <li>Common columns: Phone, First Name, Last Name, Email, Company</li>
+                    <li>Additional columns will be imported as custom fields</li>
+                  </ul>
+                </div>
               </>
             )}
 
             {/* Step 2: Map Fields */}
-            {step === 2 && preview && (
+            {step === 2 && preview && preview.headers && preview.headers.length > 0 ? (
               <>
                 <div className="alert alert-info">
                   <p className="mb-1">Map your file columns to contact fields</p>
@@ -191,7 +273,7 @@ export default function EnhancedImportModal({ campaigns, onClose, onImportComple
 
                 <div className="table-responsive" style={{ maxHeight: '400px' }}>
                   <table className="table table-sm">
-                    <thead>
+                    <thead className="sticky-top bg-white">
                       <tr>
                         <th>File Column</th>
                         <th>Sample Data</th>
@@ -200,12 +282,10 @@ export default function EnhancedImportModal({ campaigns, onClose, onImportComple
                     </thead>
                     <tbody>
                       {preview.headers.map((header, index) => (
-                        <tr key={header}>
+                        <tr key={`${header}-${index}`}>
                           <td className="fw-medium">{header}</td>
                           <td className="text-muted small">
-                            {preview.rows[0] && preview.rows[0][index] ? 
-                              String(preview.rows[0][index]).substring(0, 50) : 
-                              '(empty)'}
+                            {getSampleData(0, index)}
                           </td>
                           <td>
                             <select
@@ -237,11 +317,36 @@ export default function EnhancedImportModal({ campaigns, onClose, onImportComple
 
                 <div className="mt-3">
                   <small className="text-muted">
-                    Preview shows first row of data. Total rows: {preview.totalRows}
+                    Preview shows {Math.min(preview.rows.length, 5)} sample rows. 
+                    Total rows in file: {preview.totalRows}
                   </small>
                 </div>
               </>
-            )}
+            ) : step === 2 ? (
+              // Error state for step 2 when preview is invalid
+              <div className="text-center py-4">
+                <AlertCircle size={48} className="text-danger mb-3" />
+                <h5>Unable to Preview File</h5>
+                <p>The file structure could not be read. Please ensure your file:</p>
+                <ul className="text-start mx-auto" style={{ maxWidth: '400px' }}>
+                  <li>Is a valid CSV or Excel file</li>
+                  <li>Has at least one header row</li>
+                  <li>Contains data</li>
+                  <li>Is not corrupted</li>
+                </ul>
+                <button 
+                  className="btn btn-primary mt-3"
+                  onClick={() => {
+                    setStep(1);
+                    setPreview(null);
+                    setFile(null);
+                    setError(null);
+                  }}
+                >
+                  Try Another File
+                </button>
+              </div>
+            ) : null}
 
             {/* Step 3: Import Progress */}
             {step === 3 && importStatus && (
@@ -297,6 +402,13 @@ export default function EnhancedImportModal({ campaigns, onClose, onImportComple
                     {importStatus.failed_rows} rows failed to import. Common reasons include invalid phone numbers or duplicates.
                   </div>
                 )}
+
+                {importStatus.status === 'failed' && (
+                  <div className="alert alert-danger mt-3">
+                    <AlertCircle size={18} className="me-2" />
+                    Import failed. Please check your file and try again.
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -322,12 +434,15 @@ export default function EnhancedImportModal({ campaigns, onClose, onImportComple
               </>
             )}
 
-            {step === 2 && (
+            {step === 2 && preview && preview.headers && preview.headers.length > 0 && (
               <>
                 <button 
                   type="button" 
                   className="btn btn-secondary" 
-                  onClick={() => setStep(1)}
+                  onClick={() => {
+                    setStep(1);
+                    setError(null);
+                  }}
                 >
                   Back
                 </button>

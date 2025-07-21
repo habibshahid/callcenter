@@ -822,30 +822,51 @@ router.post('/import-enhanced', uploadExcel.single('file'), async (req, res) => 
 });
 
 // Preview Excel file
+// Preview Excel file
 async function previewExcelFile(filePath) {
   try {
     const workbook = XLSX.readFile(filePath);
     const sheetName = workbook.SheetNames[0];
+    
+    if (!sheetName) {
+      return {
+        headers: [],
+        rows: [],
+        totalRows: 0,
+        error: 'No sheets found in Excel file'
+      };
+    }
+    
     const worksheet = workbook.Sheets[sheetName];
     
     // Convert to JSON
     const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
     
     if (jsonData.length === 0) {
-      throw new Error('Excel file is empty');
+      return {
+        headers: [],
+        rows: [],
+        totalRows: 0,
+        error: 'Excel file is empty'
+      };
     }
 
-    const headers = jsonData[0];
+    const headers = jsonData[0] || [];
     const rows = jsonData.slice(1, 6); // Get first 5 rows for preview
 
     return {
       headers,
       rows,
-      totalRows: jsonData.length - 1
+      totalRows: Math.max(0, jsonData.length - 1)
     };
   } catch (error) {
     console.error('Error previewing Excel file:', error);
-    throw error;
+    return {
+      headers: [],
+      rows: [],
+      totalRows: 0,
+      error: error.message
+    };
   }
 }
 

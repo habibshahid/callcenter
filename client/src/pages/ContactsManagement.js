@@ -10,6 +10,10 @@ import { useCall } from '../context/CallContext';
 import { debounce } from 'lodash';
 import EnhancedImportModal from '../components/EnhancedImportModal';
 import DuplicateManager from '../components/DuplicateManager';
+import AddContactModal from '../components/AddContactModal';
+import EditContactModal from '../components/EditContactModal';
+import ViewContactModal from '../components/ViewContactModal';
+import '../styles/ContactsManagement.css';
 
 export default function ContactsManagement() {
   const { handleDial } = useCall();
@@ -37,6 +41,11 @@ export default function ContactsManagement() {
   const [showFilterMenu, setShowFilterMenu] = useState(false);
   const [savedFilters, setSavedFilters] = useState([]);
   const [showDuplicateManager, setShowDuplicateManager] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [showViewModal, setShowViewModal] = useState(false);
+  const [selectedContactForEdit, setSelectedContactForEdit] = useState(null);
+  const [selectedContactIdForView, setSelectedContactIdForView] = useState(null);
   // Load initial data
   useEffect(() => {
     loadCampaigns();
@@ -64,6 +73,41 @@ export default function ContactsManagement() {
       loadContacts();
     }
   }, [searchQuery]);
+
+  const handleViewContact = (contactId) => {
+    setSelectedContactIdForView(contactId);
+    setShowViewModal(true);
+  };
+
+  const handleEditContact = (contact) => {
+    setSelectedContactForEdit(contact);
+    setShowEditModal(true);
+  };
+
+  const handleAddSuccess = () => {
+    loadContacts();
+    alert('Contact added successfully!');
+  };
+
+  const handleEditSuccess = () => {
+    loadContacts();
+    alert('Contact updated successfully!');
+  };
+
+  const handleDeleteContact = async (contactId) => {
+    if (!window.confirm('Are you sure you want to delete this contact?')) {
+      return;
+    }
+
+    try {
+      await api.deleteContact(contactId);
+      loadContacts();
+      alert('Contact deleted successfully');
+    } catch (error) {
+      console.error('Error deleting contact:', error);
+      alert('Error deleting contact');
+    }
+  };
 
   const loadCampaigns = async () => {
     try {
@@ -280,7 +324,10 @@ export default function ContactsManagement() {
               <Users size={18} className="me-2" />
               Find Duplicates
             </button>
-            <button className="btn btn-outline-primary">
+            <button 
+              className="btn btn-outline-primary"
+              onClick={() => setShowAddModal(true)}
+            >
               <Plus size={18} className="me-2" />
               Add Contact
             </button>
@@ -538,20 +585,41 @@ export default function ContactsManagement() {
                       <div className="btn-group btn-group-sm">
                         <button 
                           className="btn btn-outline-secondary"
-                          title="View details"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleViewContact(contact.id);
+                          }}
+                          title="View full contact details"
                         >
                           <Eye size={14} />
                         </button>
                         <button 
                           className="btn btn-outline-secondary"
-                          title="Edit contact"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleEditContact(contact);
+                          }}
+                          title="Edit contact information"
                         >
                           <Edit size={14} />
                         </button>
                         <button 
+                          className="btn btn-outline-danger"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteContact(contact.id);
+                          }}
+                          title="Delete this contact"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                        <button 
                           className="btn btn-outline-primary"
-                          onClick={() => handleCall(contact.phone_primary)}
-                          title="Call contact"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleCall(contact.phone_primary);
+                          }}
+                          title="Call this contact"
                         >
                           <Phone size={14} />
                         </button>
@@ -631,6 +699,42 @@ export default function ContactsManagement() {
         <DuplicateManager
           campaignId={selectedCampaign}
           onClose={() => setShowDuplicateManager(false)}
+        />
+      )}
+      {showAddModal && (
+        <AddContactModal
+          campaigns={campaigns}
+          onClose={() => setShowAddModal(false)}
+          onSuccess={handleAddSuccess}
+        />
+      )}
+
+      {/* Edit Contact Modal */}
+      {showEditModal && selectedContactForEdit && (
+        <EditContactModal
+          contact={selectedContactForEdit}
+          campaigns={campaigns}
+          onClose={() => {
+            setShowEditModal(false);
+            setSelectedContactForEdit(null);
+          }}
+          onSuccess={handleEditSuccess}
+        />
+      )}
+
+      {/* View Contact Modal */}
+      {showViewModal && selectedContactIdForView && (
+        <ViewContactModal
+          contactId={selectedContactIdForView}
+          onClose={() => {
+            setShowViewModal(false);
+            setSelectedContactIdForView(null);
+          }}
+          onEdit={(contact) => {
+            setShowViewModal(false);
+            setSelectedContactIdForView(null);
+            handleEditContact(contact);
+          }}
         />
       )}
     </div>
