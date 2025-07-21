@@ -1,4 +1,4 @@
-// src/App.js
+// src/App.js - Updated with incoming call notification
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AppProvider } from './context/AppContext';
@@ -9,8 +9,10 @@ import Dashboard from './pages/Dashboard';
 import Inbox from './pages/Inbox';
 import ChangePassword from './pages/ChangePassword';
 import { CallProvider } from './context/CallContext';
-import 'bootstrap/dist/css/bootstrap.min.css';
 import ContactsManagement from './pages/ContactsManagement';
+import IncomingCallNotification from './components/IncomingCallNotification';
+import RealTimeSearch from './components/RealTimeSearch';
+import 'bootstrap/dist/css/bootstrap.min.css';
 
 const PrivateLayout = ({ children }) => {
   const token = localStorage.getItem('token');
@@ -25,6 +27,9 @@ const PrivateLayout = ({ children }) => {
       <div className="position-fixed top-0 start-0 end-0 bg-white" style={{ zIndex: 1030 }}>
         <TopBar />
       </div>
+      
+      {/* Incoming Call Notification */}
+      <IncomingCallNotification />
       
       {/* Main content area with proper spacing */}
       <div className="flex-grow-1 d-flex mt-5">

@@ -88,7 +88,7 @@ class SipService {
         userAgentString: 'Axon WebRTC (SIPJS 0.21.1)',
         register: true,
         delegate: {
-          onInvite: (invitation) => {
+          onInvite: async (invitation) => {
             console.log('Incoming INVITE received:', invitation);
             
             // Extract the calling number
@@ -98,6 +98,41 @@ class SipService {
 
             // Store session
             this.activeSession = invitation;
+
+            let callerInfo = {
+              number: remoteNumber,
+              name: remoteIdentity.displayName || remoteNumber,
+              isInbound: true
+            };
+
+            try {
+              // Attempt to identify the caller from contacts
+              const token = localStorage.getItem('token');
+              const response = await fetch(`/api/contacts/lookup/${remoteNumber}`, {
+                headers: {
+                  'Authorization': `Bearer ${token}`
+                }
+              });
+
+              if (response.ok) {
+                const contact = await response.json();
+                if (contact) {
+                  callerInfo = {
+                    ...callerInfo,
+                    contactId: contact.id,
+                    name: contact.name || `${contact.first_name || ''} ${contact.last_name || ''}`.trim() || contact.phone,
+                    company: contact.company,
+                    email: contact.email,
+                    campaign: contact.campaign_name,
+                    status: contact.status,
+                    customData: contact.custom_data
+                  };
+                  console.log('Caller identified:', callerInfo);
+                }
+              }
+            } catch (error) {
+              console.error('Error looking up caller:', error);
+            }
 
             // Set up listeners for the incoming call
             this.setupIncomingCallListeners(invitation, remoteNumber);
@@ -182,6 +217,7 @@ class SipService {
         
         case SessionState.Established:
           this.setupMediaHandling(invitation, remoteNumber);
+          this.logCallStart(remoteNumber, 'inbound');
           break;
           
         default:
@@ -204,6 +240,48 @@ class SipService {
     }
   }
 
+  async logCallStart(phoneNumber, direction) {
+    try {
+      const token = localStorage.getItem('token');
+      await fetch('/api/contacts-management/log-call', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          phone: phoneNumber,
+          direction,
+          type: 'call_start',
+          timestamp: new Date().toISOString()
+        })
+      });
+    } catch (error) {
+      console.error('Error logging call start:', error);
+    }
+  }
+
+  async logCallEnd(phoneNumber, direction) {
+    try {
+      const token = localStorage.getItem('token');
+      await fetch('/api/contacts-management/log-call', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          phone: phoneNumber,
+          direction,
+          type: 'call_end',
+          timestamp: new Date().toISOString()
+        })
+      });
+    } catch (error) {
+      console.error('Error logging call end:', error);
+    }
+  }
+  
   modifySDPForChanSip(description) {
     let sdp = description.sdp;
     
@@ -246,6 +324,7 @@ class SipService {
         throw new Error('Invalid number');
       }
 
+      let contactInfo = { number, isInbound: false };
       try {
         const token = localStorage.getItem('token');
         const response = await fetch('/api/contacts-management/log-call', {
@@ -262,9 +341,18 @@ class SipService {
         });
         
         if (response.ok) {
-          const contactInfo = await response.json();
-          console.log('Contact info:', contactInfo);
-          // You can use this info to display contact details during the call
+          const contact = await response.json();
+          if (contact && !contact.found === false) {
+            contactInfo = {
+              ...contactInfo,
+              contactId: contact.id,
+              name: contact.name || number,
+              company: contact.company,
+              campaign_id: contact.campaign_id,
+              customData: contact.custom_data
+            };
+            console.log('Contact info for outbound call:', contactInfo);
+          }
         }
       } catch (logError) {
         console.error('Error logging call:', logError);

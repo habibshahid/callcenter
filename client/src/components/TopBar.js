@@ -1,10 +1,11 @@
-// src/components/TopBar.js
+// src/components/TopBar.js - Enhanced with global search
 import React, { useState, useEffect } from 'react';
-import { Bell, User, ChevronDown, Settings, Info, LogOut, Key } from 'lucide-react';
+import { Bell, User, ChevronDown, Settings, Info, LogOut, Key, Search } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import { useApp } from '../context/AppContext';
 import CallControls from './CallControls';
+import RealTimeSearch from './RealTimeSearch';
 import { useCall } from '../context/CallContext';
 
 export default function TopBar() {
@@ -23,12 +24,12 @@ export default function TopBar() {
 
   // Local state
   const [breaks, setBreaks] = useState([]);
-  //const [currentStatus, setCurrentStatus] = useState('Available');
   const [isStatusChanging, setIsStatusChanging] = useState(false);
   const [currentStatus, setCurrentStatus] = useState('Off-Queue');
   const [showStatusDropdown, setShowStatusDropdown] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
   const [notifications] = useState([]);
   const [user, setUser] = useState(null);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
@@ -37,8 +38,6 @@ export default function TopBar() {
     loadUserData();
     loadBreaks();
     loadCurrentStatus(); 
-    // Set initial status to Off-Queue
-    //handleStatusChange('Off-Queue');
   }, []);
 
   const loadCurrentStatus = async () => {
@@ -47,7 +46,7 @@ export default function TopBar() {
       setCurrentStatus(statusData.current_status || 'Off-Queue');
     } catch (error) {
       console.error('Error loading current status:', error);
-      setCurrentStatus('Off-Queue'); // Default to Off-Queue
+      setCurrentStatus('Off-Queue');
     }
   };
 
@@ -88,21 +87,15 @@ export default function TopBar() {
     }
   };
 
-  /*const handleStatusChange = async (status) => {
-    setCurrentStatus(status);
-    setShowStatusDropdown(false);
-  };*/
-  
-  // Update handleStatusChange to use both APIs
   const handleStatusChange = async (status, breakId = null) => {
     try {
-      setIsStatusChanging(true); // Start loading
+      setIsStatusChanging(true);
       
       console.log('Updating status:', { status, breakId });
       
       const payload = {
         status,
-        ...(breakId && { breakId })  // Only add breakId if it exists
+        ...(breakId && { breakId })
       };
 
       console.log('Sending payload:', payload);
@@ -116,9 +109,17 @@ export default function TopBar() {
     } catch (error) {
       console.error('Error updating status:', error);
     } finally {
-      setIsStatusChanging(false); // End loading regardless of success/failure
+      setIsStatusChanging(false);
     }
-  }; 
+  };
+
+  const handleContactSelect = (contact) => {
+    // Navigate to contact details or dial
+    if (contact.phone_primary) {
+      handleDial(contact.phone_primary);
+    }
+    setShowSearch(false);
+  };
 
   return (
     <div className="bg-white border-bottom">
@@ -206,8 +207,31 @@ export default function TopBar() {
           />
         </div>
 
-        {/* Notifications and User Menu */}
+        {/* Right side actions */}
         <div className="d-flex align-items-center gap-3">
+          {/* Global Search */}
+          <div className="position-relative">
+            {!showSearch ? (
+              <button 
+                className="btn btn-light"
+                onClick={() => setShowSearch(true)}
+                title="Search contacts"
+              >
+                <Search size={18} />
+              </button>
+            ) : (
+              <div className="position-absolute end-0" style={{ width: '400px', top: '-10px' }}>
+                <RealTimeSearch
+                  placeholder="Search contacts..."
+                  onSelectContact={handleContactSelect}
+                  showInDropdown={true}
+                  autoFocus={true}
+                  onClose={() => setShowSearch(false)}
+                />
+              </div>
+            )}
+          </div>
+
           {/* Notifications */}
           <div className="position-relative">
             <button 
