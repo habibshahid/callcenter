@@ -18,10 +18,14 @@ class SipService {
     this.reconnectTimer = null;
     this.networkCheckInterval = null;
     this.activeSession = null;
-    this.callListeners = new Set();
+    this.callListeners = new Set(); // This is the correct property name
     this.iceServers = [{
       urls: 'stun:stun.l.google.com:19302'
     }];
+    this.isMuted = false;
+    this.isHeld = false;
+    this.currentCallContactInfo = null;
+    this.pendingContactId = null;
   }
 
   addStatusListener(listener) {
@@ -311,7 +315,7 @@ class SipService {
   }
   
   async makeCall(number) {
-    if (!this.userAgent || this.connectionState !== 'registered') {
+     if (!this.userAgent || this.connectionState !== 'registered') {
       throw new Error('SIP not ready');
     }
 
@@ -325,40 +329,82 @@ class SipService {
       }
 
       let contactInfo = { number, isInbound: false };
-      try {
-        const token = localStorage.getItem('token');
-        const response = await fetch('/api/contacts-management/log-call', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
-          body: JSON.stringify({
-            phone: number,
-            direction: 'outbound',
-            type: 'call'
-          })
-        });
+      
+      // Check if we have a pending contact ID first
+      if (this.pendingContactId) {
+        contactInfo.contactId = this.pendingContactId;
+        console.log('Using pending contact ID:', this.pendingContactId);
         
-        if (response.ok) {
-          const contact = await response.json();
-          if (contact && !contact.found === false) {
+        // Clear the pending contact ID after using it
+        const tempContactId = this.pendingContactId;
+        this.pendingContactId = null;
+        
+        // Try to get additional contact info if we have the ID
+        try {
+          const token = localStorage.getItem('token');
+          const response = await fetch(`/api/contacts-management/contacts/${tempContactId}`, {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          });
+          
+          if (response.ok) {
+            const contact = await response.json();
             contactInfo = {
               ...contactInfo,
-              contactId: contact.id,
-              name: contact.name || number,
+              contactId: tempContactId,
+              name: `${contact.first_name || ''} ${contact.last_name || ''}`.trim() || number,
               company: contact.company,
-              campaign_id: contact.campaign_id,
-              customData: contact.custom_data
+              email: contact.email,
+              campaign: contact.campaign_name
             };
-            console.log('Contact info for outbound call:', contactInfo);
+            console.log('Loaded contact info for call:', contactInfo);
           }
+        } catch (error) {
+          console.error('Error loading contact details:', error);
+          // Keep the contactId even if we couldn't load details
         }
-      } catch (logError) {
-        console.error('Error logging call:', logError);
-        // Don't block the call if logging fails
+      } else {
+        // Fallback to the existing log-call lookup
+        try {
+          const token = localStorage.getItem('token');
+          const response = await fetch('/api/contacts-management/log-call', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              phone: number,
+              direction: 'outbound',
+              type: 'call'
+            })
+          });
+          
+          if (response.ok) {
+            const contact = await response.json();
+            if (contact && contact.found !== false) {
+              contactInfo = {
+                ...contactInfo,
+                contactId: contact.id,
+                name: contact.name || number,
+                company: contact.company,
+                campaign_id: contact.campaign_id,
+                customData: contact.custom_data
+              };
+              console.log('Contact info from lookup:', contactInfo);
+            }
+          }
+        } catch (logError) {
+          console.error('Error logging call:', logError);
+          // Don't block the call if logging fails
+        }
       }
       
+      // Store the contact info to be used when the call connects
+      this.currentCallContactInfo = contactInfo;
+      
+      // Rest of the makeCall method continues as before...
       const options = {
         earlyMedia: true,
         sessionDescriptionHandlerOptions: {
@@ -379,7 +425,6 @@ class SipService {
             enableDtlsSrtp: true
           }
         },
-        // Add the SDP modifier here
         sessionDescriptionHandlerModifiers: [
           (description) => this.modifySDPForChanSip(description)
         ]
@@ -390,7 +435,9 @@ class SipService {
       // Add event listener for SDP handling in makeCall
       inviter.stateChange.addListener((state) => {
         console.log(`Call state changed to: ${state}`);
-        this.updateCallStatus(state, { number });
+        
+        // Pass the stored contact info when updating call status
+        this.updateCallStatus(state, this.currentCallContactInfo || { number });
         
         // Log SDP when available
         if (inviter.sessionDescriptionHandler) {
@@ -559,23 +606,88 @@ class SipService {
     }
   }
 
-  updateCallStatus(status, details = {}) {
-    // Preserve existing call state when updating
-    const currentState = this.activeSession ? {
-      isHeld: this.activeSession.isHeld || false,
-      isMuted: this.activeSession.isMuted || false,
-      number: this.activeSession.remoteIdentity?.uri.user
-    } : {};
-
-    // Merge current state with new details
-    const updatedDetails = {
-      ...currentState,
-      ...details,
-      status
+  updateCallStatus(status, additionalInfo = {}) {
+    const normalizedStatus = status.replace('SessionState.', '').toLowerCase();
+    
+    // Build the call status object with all available information
+    const callStatus = {
+      status: normalizedStatus,
+      isInbound: additionalInfo.isInbound || false,
+      number: additionalInfo.number || this.currentSession?.remoteIdentity?.uri?.user || 'Unknown',
+      // Preserve contact information from additionalInfo
+      contactId: additionalInfo.contactId,
+      name: additionalInfo.name,
+      company: additionalInfo.company,
+      email: additionalInfo.email,
+      campaign: additionalInfo.campaign,
+      // Include any other additional info
+      ...additionalInfo
     };
 
-    console.log('Updating call status:', updatedDetails);
-    this.callListeners.forEach(listener => listener(updatedDetails));
+    // For incoming calls, try to lookup contact info if not already present
+    if (callStatus.isInbound && !callStatus.contactId && normalizedStatus === 'ringing') {
+      this.lookupIncomingCallContact(callStatus.number).then(contactInfo => {
+        if (contactInfo) {
+          const enrichedCallStatus = {
+            ...callStatus,
+            contactId: contactInfo.id,
+            name: contactInfo.name,
+            company: contactInfo.company,
+            email: contactInfo.email,
+            campaign: contactInfo.campaign_name
+          };
+          this.callListeners.forEach(listener => listener(enrichedCallStatus));
+        }
+      }).catch(error => {
+        console.error('Error looking up incoming call contact:', error);
+      });
+    }
+
+    // Always include session state info
+    if (this.currentSession) {
+      callStatus.isMuted = this.isMuted;
+      callStatus.isHeld = this.isHeld;
+    }
+
+    console.log('Call status update:', callStatus);
+    
+    // Notify all listeners with the complete call status
+    this.callListeners.forEach(listener => listener(callStatus));
+  }
+
+  // Add this helper method if it doesn't exist
+  async lookupIncomingCallContact(phoneNumber) {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('/api/contacts-management/log-call', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          phone: phoneNumber,
+          direction: 'inbound',
+          type: 'call'
+        })
+      });
+      
+      if (response.ok) {
+        const contact = await response.json();
+        if (contact && contact.found !== false) {
+          return {
+            id: contact.id,
+            name: contact.name || phoneNumber,
+            company: contact.company,
+            email: contact.email,
+            campaign_name: contact.campaign_name || contact.queue_name
+          };
+        }
+      }
+    } catch (error) {
+      console.error('Error looking up incoming call contact:', error);
+    }
+    return null;
   }
   
   handleEarlyMedia(session, response) {
