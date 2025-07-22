@@ -1,4 +1,4 @@
-// src/App.js - Updated with incoming call notification
+// src/App.js - Updated with AutoCallNotesWrapper
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AppProvider } from './context/AppContext';
@@ -13,6 +13,7 @@ import ContactsManagement from './pages/ContactsManagement';
 import IncomingCallNotification from './components/IncomingCallNotification';
 import RealTimeSearch from './components/RealTimeSearch';
 import CallStatusProvider from './components/CallStatusProvider';
+import AutoCallNotesWrapper from './components/AutoCallNotesWrapper';
 import 'bootstrap/dist/css/bootstrap.min.css';
 
 const PrivateLayout = ({ children }) => {
@@ -23,28 +24,30 @@ const PrivateLayout = ({ children }) => {
   }
 
   return (
-    <div className="vh-100 d-flex flex-column">
-      {/* TopBar fixed at the top */}
-      <div className="position-fixed top-0 start-0 end-0 bg-white" style={{ zIndex: 1030 }}>
-        <TopBar />
-      </div>
-      
-      {/* Incoming Call Notification */}
-      <IncomingCallNotification />
-      
-      {/* Main content area with proper spacing */}
-      <div className="flex-grow-1 d-flex mt-5">
-        {/* Menu - fixed height below TopBar */}
-        <div className="position-fixed start-0 bottom-0" style={{ top: '61px', width: '60px' }}>
-          <Menu />
+    <AutoCallNotesWrapper excludeModules={['inbox']}>
+      <div className="vh-100 d-flex flex-column">
+        {/* TopBar fixed at the top */}
+        <div className="position-fixed top-0 start-0 end-0 bg-white" style={{ zIndex: 1030 }}>
+          <TopBar />
         </div>
         
-        {/* Content area with proper margin and scroll */}
-        <div className="flex-grow-1 overflow-auto" style={{ marginLeft: '60px', marginTop: '1rem' }}>
-          {children}
+        {/* Incoming Call Notification */}
+        <IncomingCallNotification />
+        
+        {/* Main content area with proper spacing */}
+        <div className="flex-grow-1 d-flex mt-5">
+          {/* Menu - fixed height below TopBar */}
+          <div className="position-fixed start-0 bottom-0" style={{ top: '61px', width: '60px' }}>
+            <Menu />
+          </div>
+          
+          {/* Content area with proper margin and scroll */}
+          <div className="flex-grow-1 overflow-auto" style={{ marginLeft: '60px', marginTop: '1rem' }}>
+            {children}
+          </div>
         </div>
       </div>
-    </div>
+    </AutoCallNotesWrapper>
   );
 };
 

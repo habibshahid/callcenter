@@ -68,40 +68,24 @@ export default function ContactsManagement() {
 
   // ADD THESE NEW STATE VARIABLES FOR CALL TRACKING
   const [callingNumbers, setCallingNumbers] = useState(new Set());
-  const [showCallNotes, setShowCallNotes] = useState(false);
-  const [activeCallContactId, setActiveCallContactId] = useState(null);
 
   // ADD THIS EFFECT TO TRACK ACTIVE CALLS
   useEffect(() => {
     if (activeCall) {
-      if (activeCall.status === 'active') {
-        // Show call notes when call becomes active
-        // Use the stored activeCallContactId if contactId is not in activeCall
-        if (activeCallContactId || activeCall.contactId) {
-          setShowCallNotes(true);
-        }
-      } else if (['Terminated', 'terminated', 'failed', 'rejected', 'Failed', 'Rejected'].includes(activeCall.status)) {
-        // Call ended
+      // Clear callingNumbers when call connects
+      if (activeCall.status !== 'trying' && activeCall.status !== 'connecting') {
         setCallingNumbers(new Set());
-        // Keep notes panel open briefly after call ends for auto-save
-        if (showCallNotes) {
-          //setTimeout(() => {
-            //setShowCallNotes(false);
-            //setActiveCallContactId(null);
-          //}, 3000);
-        }
+      }
+      
+      if (['Terminated', 'terminated', 'failed', 'rejected', 'Failed', 'Rejected'].includes(activeCall.status)) {
+        // Call ended - ensure callingNumbers is cleared
+        setCallingNumbers(new Set());
       }
     } else {
-      // No active call
-      /*setCallingNumbers(new Set());
-      if (showCallNotes) {
-        setTimeout(() => {
-          setShowCallNotes(false);
-          setActiveCallContactId(null);
-        }, 3000);
-      }*/
+      // No active call - clear everything
+      setCallingNumbers(new Set());
     }
-  }, [activeCall, activeCallContactId, showCallNotes]);
+  }, [activeCall]);
 
   // Load initial data
   useEffect(() => {
@@ -491,12 +475,8 @@ export default function ContactsManagement() {
       // Add to calling numbers set
       setCallingNumbers(prev => new Set([...prev, phoneNumber]));
       
-      // Store the contact ID for notes panel
-      if (contactId) {
-        setActiveCallContactId(contactId);
-      }
-      
-      await handleDial(phoneNumber);
+      // Pass contactId to handleDial
+      await handleDial(phoneNumber, contactId);
     } catch (error) {
       console.error('Error making call:', error);
       alert(`Failed to call ${phoneNumber}`);
@@ -1128,14 +1108,6 @@ export default function ContactsManagement() {
           </div>
         )}
       </div>
-
-      {/* ADD THIS: Call Notes Panel */}
-      {showCallNotes && activeCallContactId && (
-        <CallNotesPanel 
-          contactId={activeCallContactId}
-          onClose={() => setShowCallNotes(false)}
-        />
-      )}
 
       {/* Modals */}
       {showImportModal && (

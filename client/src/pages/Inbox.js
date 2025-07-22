@@ -27,7 +27,6 @@ export default function Inbox() {
   const [contactHistory, setContactHistory] = useState([]);
   const [showDialer, setShowDialer] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [showNotesPanel, setShowNotesPanel] = useState(false);
   const [addingNote, setAddingNote] = useState(false);
   const [newNote, setNewNote] = useState('');
   const [loadingDetails, setLoadingDetails] = useState(false);
@@ -42,18 +41,30 @@ export default function Inbox() {
   const displayedContacts = useMemo(() => {
     if (!contacts) return [];
     
-    const allContacts = [...contacts];
+    let allContacts = [...contacts];
     
-    // Add active call as a contact if not already in list
-    if (activeCall?.number && !allContacts.some(c => c.phone === activeCall.number)) {
-      allContacts.unshift({
-        id: 'active-call',
-        phone: activeCall.number,
-        phone_primary: activeCall.number,
-        name: activeCall.callerName || activeCall.number,
-        isActive: true,
-        queue_name: activeCall.isInbound ? 'Incoming Call' : 'Outbound Call'
-      });
+    // Mark the active call contact
+    if (activeCall?.number) {
+      allContacts = allContacts.map(contact => ({
+        ...contact,
+        isActive: contact.phone === activeCall.number || 
+                  contact.phone_primary === activeCall.number
+      }));
+      
+      // If active call contact not in list, add it
+      const hasActiveContact = allContacts.some(c => c.isActive);
+      if (!hasActiveContact) {
+        allContacts.unshift({
+          id: activeCall.contactId || 'active-call',
+          phone: activeCall.number,
+          phone_primary: activeCall.number,
+          name: activeCall.name || activeCall.callerName || activeCall.number,
+          email: activeCall.email,
+          company: activeCall.company,
+          isActive: true,
+          queue_name: activeCall.isInbound ? 'Incoming Call' : 'Outbound Call'
+        });
+      }
     }
 
     return allContacts.filter((contact, index, self) =>
@@ -65,12 +76,39 @@ export default function Inbox() {
     loadContacts();
   }, []);
 
-  // Auto-show notes panel for active calls
   useEffect(() => {
-    if (activeCall?.status === 'active' && selectedContact) {
-      setShowNotesPanel(true);
+    // Auto-select contact when call becomes active
+    if (activeCall && activeCall.status === 'active') {
+      // First, try to find the contact by phone number
+      const contactByPhone = contacts.find(c => 
+        c.phone === activeCall.number || 
+        c.phone_primary === activeCall.number
+      );
+      
+      if (contactByPhone) {
+        // Select the existing contact
+        handleSelectContact(contactByPhone);
+      } else if (activeCall.contactId) {
+        // If we have a contactId but contact not in list, try to find by ID
+        const contactById = contacts.find(c => c.id === activeCall.contactId);
+        if (contactById) {
+          handleSelectContact(contactById);
+        } else {
+          // Create a temporary contact for the active call
+          const tempContact = {
+            id: activeCall.contactId || 'active-call',
+            name: activeCall.name || activeCall.callerName || activeCall.number,
+            phone: activeCall.number,
+            phone_primary: activeCall.number,
+            email: activeCall.email,
+            company: activeCall.company,
+            isActive: true
+          };
+          handleSelectContact(tempContact);
+        }
+      }
     }
-  }, [activeCall, selectedContact]);
+  }, [activeCall, contacts]);
 
   const loadContacts = async () => {
     try {
@@ -208,135 +246,128 @@ export default function Inbox() {
         )}
 
         {/* Contact List */}
-        {displayedContacts.length === 0 ? (
-          <div className="p-3 text-center text-muted">
-            <p>No recent contacts</p>
-            <small>Contacts will appear here after calls</small>
-          </div>
-        ) : (
-          displayedContacts.map(contact => (
-            <div 
-              key={contact.id}
-              className={`chat-item p-3 border-bottom cursor-pointer ${
-                selectedContact?.id === contact.id ? 'bg-primary bg-opacity-10' : ''
-              } ${contact.isActive ? 'bg-light' : ''}`}
-              onClick={() => handleSelectContact(contact)}
-            >
-              <div className="d-flex flex-column">
-                <div className="d-flex align-items-center">
-                  <div className="bg-primary rounded-circle p-2 text-white me-2">
-                    {contact.name ? contact.name.charAt(0).toUpperCase() : '#'}
-                  </div>
-                  <div className="flex-grow-1">
-                    <h6 className="mb-0">{contact.name || contact.phone}</h6>
-                    <div className="d-flex align-items-center gap-3 small text-muted">
-                      <span>
-                        {contact.isActive && activeCall ? (
-                          activeCall.status === 'active' 
-                            ? `In Call (${formatTime(callDuration)})` 
-                            : activeCall.isInbound 
-                              ? 'Incoming Call' 
-                              : activeCall.status
-                        ) : (
-                          contact.queue_name || 'No campaign'
-                        )}
-                      </span>
-                      {contact.company && (
-                        <span>
-                          <Building size={12} className="me-1" />
-                          {contact.company}
-                        </span>
-                      )}
-                    </div>
-                    {contact.tags && contact.tags.length > 0 && (
-                      <div className="mt-1">
-                        {contact.tags.slice(0, 2).map((tag, idx) => (
-                          <span key={idx} className="badge bg-secondary me-1" style={{ fontSize: '10px' }}>
-                            {tag}
-                          </span>
-                        ))}
-                        {contact.tags.length > 2 && (
-                          <span className="text-muted" style={{ fontSize: '10px' }}>
-                            +{contact.tags.length - 2} more
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  {contact.interaction_count > 0 && !contact.isActive && (
-                    <span className="badge bg-primary">{contact.interaction_count}</span>
-                  )}
+        {displayedContacts.map(contact => (
+          <div 
+            key={contact.id}
+            className={`chat-item p-3 border-bottom cursor-pointer ${
+              selectedContact?.id === contact.id ? 'bg-primary bg-opacity-10' : ''
+            } ${contact.isActive ? 'bg-light' : ''}`}
+            onClick={() => handleSelectContact(contact)}
+          >
+            <div className="d-flex flex-column">
+              <div className="d-flex align-items-center">
+                <div className="bg-primary rounded-circle p-2 text-white me-2">
+                  {contact.name ? contact.name.charAt(0).toUpperCase() : '#'}
                 </div>
-
-                {/* Show call controls only for active call */}
-                {contact.isActive && activeCall && (
-                  <div className="d-flex gap-2 mt-2">
-                    {/* Answer/Reject buttons for incoming calls */}
-                    {activeCall.isInbound && activeCall.status === 'ringing' && (
-                      <>
-                        <button 
-                          className="btn btn-sm btn-success"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleAnswerCall();
-                          }}
-                        >
-                          <Phone size={16} /> Answer
-                        </button>
-                        <button 
-                          className="btn btn-sm btn-danger"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleRejectCall();
-                          }}
-                        >
-                          <X size={16} /> Reject
-                        </button>
-                      </>
+                <div className="flex-grow-1">
+                  <h6 className="mb-0">{contact.name || contact.phone}</h6>
+                  <div className="d-flex align-items-center gap-3 small text-muted">
+                    <span>
+                      {contact.isActive && activeCall ? (
+                        activeCall.status === 'active' 
+                          ? `In Call (${formatTime(callDuration)})` 
+                          : activeCall.isInbound 
+                            ? 'Incoming Call' 
+                            : activeCall.status
+                      ) : (
+                        contact.queue_name || 'No campaign'
+                      )}
+                    </span>
+                    {contact.company && (
+                      <span>
+                        <Building size={12} className="me-1" />
+                        {contact.company}
+                      </span>
                     )}
+                  </div>
+                </div>
+                {/* Show interaction count badge only if not active call */}
+                {contact.interaction_count > 0 && !contact.isActive && (
+                  <span className="badge bg-primary">{contact.interaction_count}</span>
+                )}
+              </div>
 
-                    {/* Controls for active calls */}
-                    {activeCall.status === 'active' && (
-                      <>
-                        <button 
-                          className={`btn btn-sm ${activeCall.isHeld ? 'btn-warning' : 'btn-outline-warning'}`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleHoldCall();
-                          }}
-                        >
-                          <Pause size={16} />
-                        </button>
-                        <button 
-                          className={`btn btn-sm ${activeCall.isMuted ? 'btn-secondary' : 'btn-outline-secondary'}`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleMuteCall();
-                          }}
-                        >
-                          <Disc size={16} />
-                        </button>
-                      </>
-                    )}
-                    
-                    {/* End call button */}
-                    {(activeCall.status === 'active' || (!activeCall.isInbound && ['trying', 'connecting', 'ringing'].includes(activeCall.status))) && (
+              {/* Show call controls for active call */}
+              {contact.isActive && activeCall && (
+                <div className="d-flex gap-2 mt-2">
+                  {/* Answer/Reject buttons for incoming calls */}
+                  {activeCall.isInbound && activeCall.status === 'ringing' && (
+                    <>
                       <button 
-                        className="btn btn-sm btn-danger ms-auto"
+                        className="btn btn-sm btn-success"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleAnswerCall();
+                        }}
+                      >
+                        <Phone size={16} /> Answer
+                      </button>
+                      <button 
+                        className="btn btn-sm btn-danger"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRejectCall();
+                        }}
+                      >
+                        <X size={16} /> Reject
+                      </button>
+                    </>
+                  )}
+
+                  {/* Controls for active calls */}
+                  {activeCall.status === 'active' && (
+                    <>
+                      <button 
+                        className={`btn btn-sm ${activeCall.isHeld ? 'btn-warning' : 'btn-outline-warning'}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleHoldCall();
+                        }}
+                        title={activeCall.isHeld ? 'Resume' : 'Hold'}
+                      >
+                        <Pause size={16} />
+                      </button>
+                      <button 
+                        className={`btn btn-sm ${activeCall.isMuted ? 'btn-secondary' : 'btn-outline-secondary'}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleMuteCall();
+                        }}
+                        title={activeCall.isMuted ? 'Unmute' : 'Mute'}
+                      >
+                        <Disc size={16} />
+                      </button>
+                      <button 
+                        className="btn btn-sm btn-danger"
                         onClick={(e) => {
                           e.stopPropagation();
                           handleEndCall();
                         }}
+                        title="End Call"
                       >
-                        <X size={16} />
+                        <X size={16} /> End
                       </button>
-                    )}
-                  </div>
-                )}
-              </div>
+                    </>
+                  )}
+                  
+                  {/* End button for outgoing calls being dialed */}
+                  {!activeCall.isInbound && ['trying', 'connecting', 'ringing'].includes(activeCall.status) && (
+                    <button 
+                      className="btn btn-sm btn-danger"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleEndCall();
+                      }}
+                      title="Cancel Call"
+                    >
+                      <X size={16} /> Cancel
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
-          ))
-        )}
+          </div>
+        ))}
       </div>
 
       {/* Main Content */}
@@ -585,14 +616,6 @@ export default function Inbox() {
             <p>Select a contact to view details</p>
           </div>
         </div>
-      )}
-
-      {/* Call Notes Panel - Shows during active calls */}
-      {showNotesPanel && selectedContact && activeCall?.status === 'active' && (
-        <CallNotesPanel 
-          contactId={selectedContact.id === 'active-call' ? null : selectedContact.id}
-          onClose={() => setShowNotesPanel(false)}
-        />
       )}
     </div>
   );
