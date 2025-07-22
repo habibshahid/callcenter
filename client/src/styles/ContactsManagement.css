@@ -189,62 +189,252 @@
 
 /* Add this CSS to your ContactsManagement.css or global styles */
 
-/* Call Notes Panel Positioning */
+/* Add this to your global CSS or ContactsManagement.css */
+
+/* Ensure call notes panel is visible above everything */
 .call-notes-panel {
-  position: fixed;
-  bottom: 20px;
-  right: 20px;
-  width: 400px;
-  max-height: 500px;
-  overflow-y: auto;
-  z-index: 1040;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.08);
-  animation: slideInRight 0.3s ease-out;
+  position: fixed !important;
+  bottom: 20px !important;
+  right: 20px !important;
+  width: 450px !important;
+  max-height: 600px !important;
+  overflow-y: auto !important;
+  z-index: 9999 !important; /* Very high z-index */
+  animation: slideInUp 0.3s ease-out;
 }
 
-@keyframes slideInRight {
+/* Alternative animation for better visibility */
+@keyframes slideInUp {
   from {
-    transform: translateX(100%);
+    transform: translateY(100%);
     opacity: 0;
   }
   to {
-    transform: translateX(0);
+    transform: translateY(0);
     opacity: 1;
   }
+}
+
+/* Ensure the card inside is properly styled */
+.call-notes-panel .card {
+  background: white !important;
+  border: 2px solid #0d6efd !important;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2) !important;
+}
+
+.call-notes-panel .card-header {
+  background-color: #0d6efd !important;
+  color: white !important;
+  border-bottom: none !important;
+}
+
+.call-notes-panel .card-header h6 {
+  color: white !important;
+  margin-bottom: 0 !important;
+}
+
+.call-notes-panel .card-header .btn-link {
+  color: white !important;
+}
+
+/* Make buttons more visible */
+.call-notes-panel .btn-primary {
+  background-color: #0d6efd !important;
+  border-color: #0d6efd !important;
+}
+
+.call-notes-panel .btn-outline-primary {
+  color: #0d6efd !important;
+  border-color: #0d6efd !important;
+}
+
+/* Tag buttons styling */
+.call-notes-panel .btn-outline-secondary {
+  font-size: 0.875rem;
+  padding: 0.25rem 0.5rem;
+}
+
+/* Responsive for smaller screens */
+@media (max-width: 768px) {
+  .call-notes-panel {
+    width: calc(100% - 40px) !important;
+    right: 20px !important;
+    left: 20px !important;
+    bottom: 10px !important;
+  }
+}
+
+/* Dark overlay background (optional) */
+.call-notes-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.3);
+  z-index: 9998;
+}
+
+/* Enhanced Call Notes Panel CSS with warning states */
+
+/* Base draggable panel styles */
+.call-notes-panel-draggable {
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  transition: box-shadow 0.3s ease;
+}
+
+/* Warning state styling */
+.call-notes-panel-draggable .card.border-warning {
+  animation: pulseWarning 2s ease-in-out infinite;
+}
+
+@keyframes pulseWarning {
+  0% { box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2); }
+  50% { box-shadow: 0 8px 32px rgba(255, 193, 7, 0.4); }
+  100% { box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2); }
+}
+
+/* Header warning state */
+.call-notes-panel-draggable .card-header.bg-warning {
+  background-color: #ffc107 !important;
+  color: #000 !important;
+  font-weight: 500;
+}
+
+.call-notes-panel-draggable .card-header.bg-warning .btn-link {
+  color: #000 !important;
+}
+
+/* Input warning states */
+.form-control.border-warning,
+.form-select.border-warning {
+  border-color: #ffc107 !important;
+  box-shadow: 0 0 0 0.1rem rgba(255, 193, 7, 0.25);
+}
+
+.form-control.border-warning:focus,
+.form-select.border-warning:focus {
+  border-color: #ffc107 !important;
+  box-shadow: 0 0 0 0.2rem rgba(255, 193, 7, 0.25);
+}
+
+/* Required field indicators */
+.form-label .text-danger {
+  font-size: 1.1em;
+  font-weight: bold;
+  animation: blink 1.5s ease-in-out infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* Tag button warning state */
+.btn-outline-warning {
+  color: #ffc107;
+  border-color: #ffc107;
+}
+
+.btn-outline-warning:hover {
+  color: #000;
+  background-color: #ffc107;
+  border-color: #ffc107;
+}
+
+/* Alert styling enhancements */
+.alert-warning .alert-icon {
+  animation: shake 0.5s ease-in-out;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  10%, 30%, 50%, 70%, 90% { transform: translateX(-2px); }
+  20%, 40%, 60%, 80% { transform: translateX(2px); }
+}
+
+/* Modal backdrop for warning */
+.modal.show {
+  animation: fadeIn 0.3s ease-out;
+}
+
+.modal-dialog {
+  animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    transform: translate(-50%, -100%);
+    opacity: 0;
+  }
+  to {
+    transform: translate(-50%, -50%);
+    opacity: 1;
+  }
+}
+
+/* Drag and resize cursors */
+.call-notes-panel-draggable .card-header:not(.bg-warning):hover {
+  background-color: #0b5ed7 !important;
+}
+
+.call-notes-panel-draggable.dragging {
+  opacity: 0.9;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.3) !important;
+}
+
+/* Resize handle styling */
+.resize-handle {
+  background: linear-gradient(135deg, transparent 50%, #6c757d 50%);
+  background-size: 4px 4px;
+  background-position: bottom right;
+  background-repeat: no-repeat;
+}
+
+.resize-handle:hover {
+  background: linear-gradient(135deg, transparent 40%, #0d6efd 40%);
+  background-size: 6px 6px;
+  background-position: bottom right;
+  background-repeat: no-repeat;
+}
+
+/* Save button states */
+.btn-warning:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Scrollbar styling */
+.call-notes-panel-draggable .card-body::-webkit-scrollbar {
+  width: 8px;
+}
+
+.call-notes-panel-draggable .card-body::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+.call-notes-panel-draggable .card-body::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 4px;
+}
+
+.call-notes-panel-draggable .card-body::-webkit-scrollbar-thumb:hover {
+  background: #555;
 }
 
 /* Responsive adjustments */
 @media (max-width: 768px) {
-  .call-notes-panel {
-    width: 90%;
-    right: 5%;
-    left: 5%;
+  .call-notes-panel-draggable {
+    min-width: 320px !important;
+    max-width: calc(100vw - 20px) !important;
   }
-}
-
-/* Ensure the panel stays above other content */
-.call-notes-panel .card {
-  background: white;
-  border: 1px solid #dee2e6;
-}
-
-.call-notes-panel .card-header {
-  background-color: #f8f9fa;
-  border-bottom: 1px solid #dee2e6;
-}
-
-/* Animation for when panel closes */
-.call-notes-panel.closing {
-  animation: slideOutRight 0.3s ease-in forwards;
-}
-
-@keyframes slideOutRight {
-  from {
-    transform: translateX(0);
-    opacity: 1;
-  }
-  to {
-    transform: translateX(100%);
-    opacity: 0;
+  
+  .modal-dialog {
+    margin: 1rem;
+    max-width: calc(100% - 2rem);
   }
 }

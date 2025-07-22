@@ -62,7 +62,7 @@ router.get('/active-agents', async (req, res) => {
       FROM users u
       LEFT JOIN breaks b ON u.current_break_id = b.id
       JOIN users_groups ug ON u.id = ug.user_id
-      JOIN groups g ON ug.group_id = g.id
+      JOIN \`groups\` g ON ug.group_id = g.id
       WHERE g.name = 'Agent'
       AND u.last_login > DATE_SUB(NOW(), INTERVAL 24 HOUR)
     `);

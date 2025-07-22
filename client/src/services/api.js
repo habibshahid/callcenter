@@ -334,7 +334,7 @@ export const api = {
 
   // Contact interactions
   addContactInteraction: (contactId, interaction) =>
-    fetch(`${API_URL}/contacts-management/contacts/${contactId}/interactions`, {
+    fetch(`${API_URL}/contacts/contacts/${contactId}/interactions`, {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify(interaction)
@@ -452,6 +452,25 @@ export const api = {
     fetch(`${API_URL}/contacts-management/campaigns/${campaignId}/custom-fields-list`, {
       headers: getHeaders()
     }).then(handleResponse),
+
+  getDispositions: () =>
+    fetch(`${API_URL}/contacts/dispositions`, {
+      headers: getHeaders()
+    }).then(handleResponse),
+
+  // Get tags list
+  getTags: () =>
+    fetch(`${API_URL}/contacts/tags`, {
+      headers: getHeaders()
+    }).then(handleResponse),
+
+  // Get contact interactions history
+  getContactInteractions: (contactId, params = {}) => {
+    const queryParams = new URLSearchParams(params);
+    return fetch(`${API_URL}/contacts/contacts/${contactId}/interactions?${queryParams}`, {
+      headers: getHeaders()
+    }).then(handleResponse);
+  }
 };
 
 export default api;

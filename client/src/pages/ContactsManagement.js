@@ -85,21 +85,21 @@ export default function ContactsManagement() {
         setCallingNumbers(new Set());
         // Keep notes panel open briefly after call ends for auto-save
         if (showCallNotes) {
-          setTimeout(() => {
-            setShowCallNotes(false);
-            setActiveCallContactId(null);
-          }, 3000);
+          //setTimeout(() => {
+            //setShowCallNotes(false);
+            //setActiveCallContactId(null);
+          //}, 3000);
         }
       }
     } else {
       // No active call
-      setCallingNumbers(new Set());
+      /*setCallingNumbers(new Set());
       if (showCallNotes) {
         setTimeout(() => {
           setShowCallNotes(false);
           setActiveCallContactId(null);
         }, 3000);
-      }
+      }*/
     }
   }, [activeCall, activeCallContactId, showCallNotes]);
 

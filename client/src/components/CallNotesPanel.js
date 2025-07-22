@@ -1,6 +1,6 @@
-// src/components/CallNotesPanel.js
-import React, { useState, useEffect } from 'react';
-import { MessageSquare, Save, Tag, X } from 'lucide-react';
+// Enhanced CallNotesPanel.js with mandatory input after call ends
+import React, { useState, useEffect, useRef } from 'react';
+import { MessageSquare, Save, Tag, X, Move, GripVertical, AlertTriangle } from 'lucide-react';
 import { useCall } from '../context/CallContext';
 import { api } from '../services/api';
 
@@ -13,50 +13,161 @@ export default function CallNotesPanel({ contactId, onClose }) {
   const [selectedDisposition, setSelectedDisposition] = useState('');
   const [saving, setSaving] = useState(false);
   const [autoSave, setAutoSave] = useState(false);
+  const [loading, setLoading] = useState(true);
+  
+  // New states for mandatory input
+  const [callEnded, setCallEnded] = useState(false);
+  const [showCloseWarning, setShowCloseWarning] = useState(false);
+  const [forceClose, setForceClose] = useState(false);
+  const [hasUnsavedData, setHasUnsavedData] = useState(false);
+  
+  // Drag and resize state (same as before)
+  const [position, setPosition] = useState({ x: window.innerWidth - 420, y: 20 });
+  const [size, setSize] = useState({ width: 400, height: 500 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [isResizing, setIsResizing] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [resizeStart, setResizeStart] = useState({ x: 0, y: 0, width: 0, height: 0 });
+  
+  const panelRef = useRef(null);
 
   useEffect(() => {
-    loadDispositions();
+    loadData();
+    
+    // Load saved position/size from localStorage
+    const savedState = localStorage.getItem('callNotesPanelState');
+    if (savedState) {
+      const { position: savedPos, size: savedSize } = JSON.parse(savedState);
+      if (savedPos) setPosition(savedPos);
+      if (savedSize) setSize(savedSize);
+    }
   }, []);
 
-  // Auto-save when call ends
+  // Save position/size to localStorage
   useEffect(() => {
-    if (['Terminated', 'terminated', 'Rejected', 'rejected', 'Failed', 'failed'].includes(activeCall?.status) && (notes || selectedTags.length > 0 || selectedDisposition)) {
-      handleSave(true);
+    const state = { position, size };
+    localStorage.setItem('callNotesPanelState', JSON.stringify(state));
+  }, [position, size]);
+
+  // Track when call ends
+  useEffect(() => {
+    if (activeCall?.status === 'terminated' || activeCall?.status === 'failed' || activeCall?.status === 'rejected') {
+      setCallEnded(true);
+      // Check if there's any data entered
+      const hasData = notes.trim() || selectedTags.length > 0 || selectedDisposition;
+      setHasUnsavedData(hasData);
     }
-  }, [activeCall?.status]);
+  }, [activeCall?.status, notes, selectedTags, selectedDisposition]);
 
-  const loadDispositions = async () => {
-    try {
-      // Mock dispositions - replace with actual API call
-      const mockDispositions = [
-        { id: 1, name: 'Interested', color: 'success' },
-        { id: 2, name: 'Not Interested', color: 'danger' },
-        { id: 3, name: 'Call Back Later', color: 'warning' },
-        { id: 4, name: 'Wrong Number', color: 'secondary' },
-        { id: 5, name: 'Voicemail', color: 'info' },
-        { id: 6, name: 'Successful Sale', color: 'primary' }
-      ];
-      setDispositions(mockDispositions);
-
-      // Mock tags
-      const mockTags = [
-        'Hot Lead', 'Cold Lead', 'Decision Maker', 'Gatekeeper',
-        'Technical Questions', 'Pricing Questions', 'Demo Requested',
-        'Follow Up Required', 'Send Email', 'Send Proposal'
-      ];
-      setTags(mockTags);
-    } catch (error) {
-      console.error('Error loading dispositions:', error);
+  // Prevent closing without data after call ends
+  const handleCloseAttempt = () => {
+    const hasData = notes.trim() || selectedTags.length > 0 || selectedDisposition;
+    
+    if (callEnded && !hasData && !forceClose) {
+      setShowCloseWarning(true);
+    } else if (hasData && !forceClose) {
+      // If there's unsaved data, show a different warning
+      if (window.confirm('You have unsaved notes. Are you sure you want to close without saving?')) {
+        onClose();
+      }
+    } else {
+      onClose();
     }
   };
 
-  const handleSave = async (isAutoSave = false) => {
+  // Mouse event handlers (same as before)
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (isDragging) {
+        const newX = e.clientX - dragStart.x;
+        const newY = e.clientY - dragStart.y;
+        
+        const maxX = window.innerWidth - size.width;
+        const maxY = window.innerHeight - size.height;
+        
+        setPosition({
+          x: Math.max(0, Math.min(newX, maxX)),
+          y: Math.max(0, Math.min(newY, maxY))
+        });
+      } else if (isResizing) {
+        const newWidth = resizeStart.width + (e.clientX - resizeStart.x);
+        const newHeight = resizeStart.height + (e.clientY - resizeStart.y);
+        
+        setSize({
+          width: Math.max(300, Math.min(newWidth, window.innerWidth - position.x)),
+          height: Math.max(400, Math.min(newHeight, window.innerHeight - position.y))
+        });
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+      setIsResizing(false);
+    };
+
+    if (isDragging || isResizing) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      
+      return () => {
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+      };
+    }
+  }, [isDragging, isResizing, dragStart, resizeStart, position, size]);
+
+  const handleDragStart = (e) => {
+    const rect = panelRef.current.getBoundingClientRect();
+    setDragStart({
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top
+    });
+    setIsDragging(true);
+    e.preventDefault();
+  };
+
+  const handleResizeStart = (e) => {
+    setResizeStart({
+      x: e.clientX,
+      y: e.clientY,
+      width: size.width,
+      height: size.height
+    });
+    setIsResizing(true);
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      const [dispositionsData, tagsData] = await Promise.all([
+        api.getDispositions(),
+        api.getTags()
+      ]);
+      
+      setDispositions(dispositionsData);
+      setTags(tagsData.map(tag => tag.name));
+    } catch (error) {
+      console.error('Error loading data:', error);
+      // Fallback to hardcoded values if API fails
+      setDispositions([
+        { id: 1, name: 'Interested', color: 'success' },
+        { id: 2, name: 'Not Interested', color: 'danger' },
+        { id: 3, name: 'Call Back Later', color: 'warning' }
+      ]);
+      setTags(['Hot Lead', 'Decision Maker', 'Follow Up Required']);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSave = async () => {
     if (!contactId || (!notes.trim() && selectedTags.length === 0 && !selectedDisposition)) {
       return;
     }
 
     setSaving(true);
-    if (isAutoSave) setAutoSave(true);
 
     try {
       const interactionData = {
@@ -67,35 +178,35 @@ export default function CallNotesPanel({ contactId, onClose }) {
           tags: selectedTags,
           disposition: selectedDisposition,
           call_related: true,
-          call_status: activeCall?.status,
-          auto_saved: isAutoSave
+          call_status: activeCall?.status || 'terminated',
+          call_ended: callEnded
         }
       };
 
       await api.addContactInteraction(contactId, interactionData);
-
-      // Update contact tags if any selected
+      
       if (selectedTags.length > 0) {
         await api.updateContactDetails(contactId, {
           tags: selectedTags
         });
       }
 
-      if (!isAutoSave) {
-        // Clear form after manual save
-        setNotes('');
-        setSelectedTags([]);
-        setSelectedDisposition('');
-        alert('Notes saved successfully!');
-      }
+      // Clear form after save
+      setNotes('');
+      setSelectedTags([]);
+      setSelectedDisposition('');
+      setHasUnsavedData(false);
+      
+      alert('Notes saved successfully!');
+      
+      // Allow closing after successful save
+      setForceClose(true);
+      setTimeout(() => onClose(), 1000);
     } catch (error) {
       console.error('Error saving notes:', error);
-      if (!isAutoSave) {
-        alert('Error saving notes');
-      }
+      alert('Error saving notes: ' + error.message);
     } finally {
       setSaving(false);
-      setAutoSave(false);
     }
   };
 
@@ -108,132 +219,253 @@ export default function CallNotesPanel({ contactId, onClose }) {
   };
 
   const isCallActive = activeCall && !['terminated', 'failed', 'rejected'].includes(activeCall.status);
+  const hasData = notes.trim() || selectedTags.length > 0 || selectedDisposition;
+
+  if (loading) {
+    return (
+      <div style={{
+        position: 'fixed',
+        bottom: '20px',
+        right: '20px',
+        zIndex: 9999
+      }}>
+        <div className="spinner-border" role="status">
+          <span className="visually-hidden">Loading...</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="call-notes-panel card shadow-sm">
-      <div className="card-header d-flex justify-content-between align-items-center">
-        <h6 className="mb-0">
-          <MessageSquare size={18} className="me-2" />
-          Call Notes
-        </h6>
-        {onClose && (
-          <button className="btn btn-sm btn-link" onClick={onClose}>
-            <X size={18} />
-          </button>
-        )}
-      </div>
-      
-      <div className="card-body">
-        {/* Notes Text Area */}
-        <div className="mb-3">
-          <label className="form-label small">Notes</label>
-          <textarea
-            className="form-control"
-            rows="4"
-            placeholder="Add notes about this call..."
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            disabled={saving}
-          />
-        </div>
-
-        {/* Disposition Selection */}
-        <div className="mb-3">
-          <label className="form-label small">
-            <Tag size={14} className="me-1" />
-            Call Disposition
-          </label>
-          <select 
-            className="form-select"
-            value={selectedDisposition}
-            onChange={(e) => setSelectedDisposition(e.target.value)}
-            disabled={saving}
+    <>
+      <div 
+        ref={panelRef}
+        className="call-notes-panel-draggable"
+        style={{
+          position: 'fixed',
+          left: `${position.x}px`,
+          top: `${position.y}px`,
+          width: `${size.width}px`,
+          height: `${size.height}px`,
+          zIndex: 9999,
+          backgroundColor: 'white',
+          borderRadius: '8px',
+          boxShadow: '0 8px 24px rgba(0, 0, 0, 0.2)',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden'
+        }}
+      >
+        <div className="card h-100" style={{ 
+          margin: 0, 
+          border: callEnded && !hasData ? '3px solid #ffc107' : '2px solid #0d6efd', 
+          borderRadius: '8px' 
+        }}>
+          <div 
+            className="card-header d-flex justify-content-between align-items-center" 
+            style={{ 
+              backgroundColor: callEnded && !hasData ? '#ffc107' : '#0d6efd', 
+              color: callEnded && !hasData ? '#000' : 'white',
+              cursor: isDragging ? 'grabbing' : 'grab'
+            }}
+            onMouseDown={handleDragStart}
           >
-            <option value="">Select disposition...</option>
-            {dispositions.map(disp => (
-              <option key={disp.id} value={disp.name}>
-                {disp.name}
-              </option>
-            ))}
-          </select>
-        </div>
+            <h6 className="mb-0 d-flex align-items-center" style={{ color: 'inherit' }}>
+              <Move size={18} className="me-2" style={{ cursor: 'grab' }} />
+              <MessageSquare size={18} className="me-2" />
+              Call Notes {callEnded && !hasData && '(Required)'}
+            </h6>
+            {onClose && (
+              <button 
+                className="btn btn-sm btn-link p-0" 
+                onClick={handleCloseAttempt}
+                style={{ color: 'inherit' }}
+              >
+                <X size={18} />
+              </button>
+            )}
+          </div>
+          
+          <div className="card-body overflow-auto" style={{ flex: 1 }}>
+            {/* Warning for call ended without data */}
+            {callEnded && !hasData && (
+              <div className="alert alert-warning d-flex align-items-start">
+                <AlertTriangle size={20} className="me-2 flex-shrink-0 mt-1" />
+                <div>
+                  <strong>Call Summary Required</strong>
+                  <p className="mb-0 small mt-1">
+                    Please add at least one of the following before closing:
+                    <ul className="mb-0 mt-1">
+                      <li>Call notes</li>
+                      <li>Disposition</li>
+                      <li>Tags</li>
+                    </ul>
+                  </p>
+                </div>
+              </div>
+            )}
 
-        {/* Tags Selection */}
-        <div className="mb-3">
-          <label className="form-label small">Tags</label>
-          <div className="d-flex flex-wrap gap-2">
-            {tags.map(tag => (
-              <button
-                key={tag}
-                className={`btn btn-sm ${
-                  selectedTags.includes(tag) 
-                    ? 'btn-primary' 
-                    : 'btn-outline-secondary'
-                }`}
-                onClick={() => toggleTag(tag)}
+            {/* Status indicator */}
+            {isCallActive && (
+              <div className="alert alert-info py-2 mb-3">
+                <small>📞 Call in progress</small>
+              </div>
+            )}
+
+            {/* Notes Text Area */}
+            <div className="mb-3">
+              <label className="form-label small fw-bold">
+                Notes {callEnded && !notes.trim() && <span className="text-danger">*</span>}
+              </label>
+              <textarea
+                className={`form-control ${callEnded && !hasData ? 'border-warning' : ''}`}
+                rows="4"
+                placeholder="Add notes about this call..."
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                disabled={saving}
+                style={{ resize: 'none' }}
+              />
+            </div>
+
+            {/* Disposition Selection */}
+            <div className="mb-3">
+              <label className="form-label small fw-bold">
+                <Tag size={14} className="me-1" />
+                Call Disposition {callEnded && !selectedDisposition && <span className="text-danger">*</span>}
+              </label>
+              <select 
+                className={`form-select ${callEnded && !hasData ? 'border-warning' : ''}`}
+                value={selectedDisposition}
+                onChange={(e) => setSelectedDisposition(e.target.value)}
                 disabled={saving}
               >
-                {tag}
+                <option value="">Select disposition...</option>
+                {dispositions.map(disp => (
+                  <option key={disp.id} value={disp.name}>
+                    {disp.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Tags Selection */}
+            <div className="mb-3">
+              <label className="form-label small fw-bold">
+                Tags {callEnded && selectedTags.length === 0 && <span className="text-danger">*</span>}
+              </label>
+              <div className="d-flex flex-wrap gap-2">
+                {tags.map(tag => (
+                  <button
+                    key={tag}
+                    className={`btn btn-sm ${
+                      selectedTags.includes(tag) 
+                        ? 'btn-primary' 
+                        : callEnded && !hasData 
+                          ? 'btn-outline-warning' 
+                          : 'btn-outline-secondary'
+                    }`}
+                    onClick={() => toggleTag(tag)}
+                    disabled={saving}
+                  >
+                    {tag}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Save Button */}
+            <div className="d-grid">
+              <button 
+                className={`btn ${callEnded && !hasData ? 'btn-warning' : 'btn-primary'}`}
+                onClick={handleSave}
+                disabled={saving || !hasData}
+              >
+                {saving ? (
+                  <>
+                    <span className="spinner-border spinner-border-sm me-2" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Save size={16} className="me-2" />
+                    {callEnded ? 'Save & Close' : 'Save Notes'}
+                  </>
+                )}
               </button>
-            ))}
+            </div>
           </div>
         </div>
-
-        {/* Save Button */}
-        <div className="d-flex justify-content-between align-items-center">
-          <div>
-            {autoSave && (
-              <small className="text-success">
-                <Save size={14} className="me-1" />
-                Auto-saved
-              </small>
-            )}
-          </div>
-          <button 
-            className="btn btn-primary btn-sm"
-            onClick={() => handleSave(false)}
-            disabled={saving || !isCallActive}
-          >
-            {saving ? (
-              <>
-                <span className="spinner-border spinner-border-sm me-2" />
-                Saving...
-              </>
-            ) : (
-              <>
-                <Save size={16} className="me-2" />
-                Save Notes
-              </>
-            )}
-          </button>
+        
+        {/* Resize handle */}
+        <div
+          className="resize-handle"
+          onMouseDown={handleResizeStart}
+          style={{
+            position: 'absolute',
+            bottom: 0,
+            right: 0,
+            width: '20px',
+            height: '20px',
+            cursor: 'nwse-resize',
+            backgroundColor: 'transparent'
+          }}
+        >
+          <GripVertical 
+            size={16} 
+            style={{
+              position: 'absolute',
+              bottom: '2px',
+              right: '2px',
+              color: '#6c757d',
+              transform: 'rotate(45deg)'
+            }}
+          />
         </div>
-
-        {!isCallActive && (
-          <div className="alert alert-info mt-3 mb-0">
-            <small>Call notes will be auto-saved when the call ends.</small>
-          </div>
-        )}
       </div>
-    </div>
+
+      {/* Close Warning Modal */}
+      {showCloseWarning && (
+        <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 10000 }}>
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content">
+              <div className="modal-header bg-warning">
+                <h5 className="modal-title">
+                  <AlertTriangle size={20} className="me-2" />
+                  Call Summary Required
+                </h5>
+              </div>
+              <div className="modal-body">
+                <p>The call has ended but no summary was provided.</p>
+                <p className="mb-0">Please add at least one of the following:</p>
+                <ul>
+                  <li>Call notes</li>
+                  <li>Call disposition</li>
+                  <li>Tags</li>
+                </ul>
+              </div>
+              <div className="modal-footer">
+                <button 
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    setShowCloseWarning(false);
+                    setForceClose(true);
+                    onClose();
+                  }}
+                >
+                  Close Anyway
+                </button>
+                <button 
+                  className="btn btn-warning"
+                  onClick={() => setShowCloseWarning(false)}
+                >
+                  Go Back
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
-
-// CSS for the panel
-const panelStyles = `
-.call-notes-panel {
-  position: fixed;
-  bottom: 20px;
-  right: 20px;
-  width: 350px;
-  max-height: 600px;
-  overflow-y: auto;
-  z-index: 1040;
-}
-
-@media (max-width: 768px) {
-  .call-notes-panel {
-    width: 90%;
-    right: 5%;
-  }
-}
-`;
