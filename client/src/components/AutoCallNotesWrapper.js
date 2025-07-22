@@ -25,18 +25,7 @@ export default function AutoCallNotesWrapper({ children, excludeModules = ['inbo
         setShowCallNotes(false);
         setCallContactId(null);
       }
-    } else if (!activeCall) {
-      // Keep panel open for a bit after call ends to allow saving
-      if (showCallNotes && callContactId && callContactId !== 'active-call') {
-        setTimeout(() => {
-          setShowCallNotes(false);
-          setCallContactId(null);
-        }, 3000);
-      } else {
-        setShowCallNotes(false);
-        setCallContactId(null);
-      }
-    }
+    } 
   }, [activeCall, shouldShowNotes, showCallNotes, callContactId]);
 
   return (

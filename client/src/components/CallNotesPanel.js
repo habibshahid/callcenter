@@ -20,6 +20,7 @@ export default function CallNotesPanel({ contactId, onClose }) {
   const [showCloseWarning, setShowCloseWarning] = useState(false);
   const [forceClose, setForceClose] = useState(false);
   const [hasUnsavedData, setHasUnsavedData] = useState(false);
+  const [dispositionMandatory, setDispositionMandatory] = useState(false);
   
   // Drag and resize state (same as before)
   const [position, setPosition] = useState({ x: window.innerWidth - 420, y: 20 });
@@ -33,7 +34,8 @@ export default function CallNotesPanel({ contactId, onClose }) {
 
   useEffect(() => {
     loadData();
-    
+    loadGlobalSettings();
+
     // Load saved position/size from localStorage
     const savedState = localStorage.getItem('callNotesPanelState');
     if (savedState) {
@@ -43,6 +45,17 @@ export default function CallNotesPanel({ contactId, onClose }) {
     }
   }, []);
 
+  const loadGlobalSettings = async () => {
+    try {
+      const setting = await api.getGlobalSetting('disposition_mandatory');
+      setDispositionMandatory(setting.value === true);
+    } catch (error) {
+      console.error('Error loading disposition_mandatory setting:', error);
+      // Default to false if setting not found
+      setDispositionMandatory(false);
+    }
+  };
+
   // Save position/size to localStorage
   useEffect(() => {
     const state = { position, size };
@@ -51,7 +64,7 @@ export default function CallNotesPanel({ contactId, onClose }) {
 
   // Track when call ends
   useEffect(() => {
-    if (activeCall?.status === 'terminated' || activeCall?.status === 'failed' || activeCall?.status === 'rejected') {
+    if (activeCall?.status === 'Rejected' || activeCall?.status === 'Failed' || activeCall?.status === 'Terminated' || activeCall?.status === 'terminated' || activeCall?.status === 'failed' || activeCall?.status === 'rejected') {
       setCallEnded(true);
       // Check if there's any data entered
       const hasData = notes.trim() || selectedTags.length > 0 || selectedDisposition;
@@ -218,8 +231,9 @@ export default function CallNotesPanel({ contactId, onClose }) {
     );
   };
 
-  const isCallActive = activeCall && !['terminated', 'failed', 'rejected'].includes(activeCall.status);
+  const isCallActive = activeCall && !['Terminated', 'Failed', 'Rejected', 'terminated', 'failed', 'rejected'].includes(activeCall.status);
   const hasData = notes.trim() || selectedTags.length > 0 || selectedDisposition;
+  const showWarning = callEnded && !hasData && dispositionMandatory;
 
   if (loading) {
     return (
@@ -288,6 +302,22 @@ export default function CallNotesPanel({ contactId, onClose }) {
           
           <div className="card-body overflow-auto" style={{ flex: 1 }}>
             {/* Warning for call ended without data */}
+            {showWarning && (
+              <div className="alert alert-warning d-flex align-items-start">
+                <AlertTriangle size={20} className="me-2 flex-shrink-0 mt-1" />
+                <div>
+                  <strong>Call Summary Required</strong>
+                  <p className="mb-0 small mt-1">
+                    Please add at least one of the following before closing:
+                    <ul className="mb-0 mt-1">
+                      <li>Call notes</li>
+                      <li>Disposition</li>
+                      <li>Tags</li>
+                    </ul>
+                  </p>
+                </div>
+              </div>
+            )}
             {callEnded && !hasData && (
               <div className="alert alert-warning d-flex align-items-start">
                 <AlertTriangle size={20} className="me-2 flex-shrink-0 mt-1" />
@@ -426,40 +456,37 @@ export default function CallNotesPanel({ contactId, onClose }) {
 
       {/* Close Warning Modal */}
       {showCloseWarning && (
-        <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 10000 }}>
+        <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
           <div className="modal-dialog modal-dialog-centered">
             <div className="modal-content">
-              <div className="modal-header bg-warning">
-                <h5 className="modal-title">
-                  <AlertTriangle size={20} className="me-2" />
-                  Call Summary Required
-                </h5>
+              <div className="modal-header">
+                <h5 className="modal-title">Call Summary Required</h5>
               </div>
               <div className="modal-body">
-                <p>The call has ended but no summary was provided.</p>
-                <p className="mb-0">Please add at least one of the following:</p>
+                <p>You must add at least one of the following before closing:</p>
                 <ul>
                   <li>Call notes</li>
-                  <li>Call disposition</li>
+                  <li>Disposition</li>
                   <li>Tags</li>
                 </ul>
+                <p>Would you like to force close anyway?</p>
               </div>
               <div className="modal-footer">
                 <button 
-                  className="btn btn-secondary"
+                  className="btn btn-secondary" 
+                  onClick={() => setShowCloseWarning(false)}
+                >
+                  Cancel
+                </button>
+                <button 
+                  className="btn btn-danger" 
                   onClick={() => {
-                    setShowCloseWarning(false);
                     setForceClose(true);
+                    setShowCloseWarning(false);
                     onClose();
                   }}
                 >
-                  Close Anyway
-                </button>
-                <button 
-                  className="btn btn-warning"
-                  onClick={() => setShowCloseWarning(false)}
-                >
-                  Go Back
+                  Force Close
                 </button>
               </div>
             </div>

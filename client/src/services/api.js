@@ -470,7 +470,17 @@ export const api = {
     return fetch(`${API_URL}/contacts/contacts/${contactId}/interactions?${queryParams}`, {
       headers: getHeaders()
     }).then(handleResponse);
-  }
+  },
+
+  getGlobalSettings: () =>
+    fetch(`${API_URL}/settings/global`, {
+      headers: getHeaders()
+    }).then(handleResponse),
+
+  getGlobalSetting: (key) =>
+    fetch(`${API_URL}/settings/global/${key}`, {
+      headers: getHeaders()
+    }).then(handleResponse),
 };
 
 export default api;

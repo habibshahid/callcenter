@@ -10,6 +10,7 @@ const sipRoutes = require('./sip');
 const agentRoutes = require('./agents');
 const { authenticateToken } = require('../middleware/auth');
 const contactsManagementRoutes = require('./contacts-management');
+const settingsRoutes = require('./settings');
 
 // Public routes
 router.use('/auth', authRoutes);
@@ -22,5 +23,6 @@ router.use('/breaks', authenticateToken, breaksRoutes);
 router.use('/sip', authenticateToken, sipRoutes);
 router.use('/agent', authenticateToken, agentRoutes);
 router.use('/contacts-management', authenticateToken, contactsManagementRoutes);
+router.use('/settings', settingsRoutes);
 
 module.exports = router;
