@@ -1,32 +1,29 @@
-// Enhanced CallNotesPanel.js with call and contact information display
+// Enhanced CallNotesPanel.js with mandatory input after call ends
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  MessageSquare, Save, Tag, X, Move, GripVertical, AlertTriangle,
-  Phone, User, Building, Mail, Clock, Calendar
-} from 'lucide-react';
+import { MessageSquare, Save, Tag, X, Move, GripVertical, AlertTriangle } from 'lucide-react';
 import { useCall } from '../context/CallContext';
 import { api } from '../services/api';
 
 export default function CallNotesPanel({ contactId, onClose }) {
-  const { activeCall, callDuration } = useCall();
+  const { activeCall } = useCall();
   const [notes, setNotes] = useState('');
   const [tags, setTags] = useState([]);
   const [selectedTags, setSelectedTags] = useState([]);
   const [dispositions, setDispositions] = useState([]);
   const [selectedDisposition, setSelectedDisposition] = useState('');
   const [saving, setSaving] = useState(false);
+  const [autoSave, setAutoSave] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [contactInfo, setContactInfo] = useState(null);
   
-  // States for mandatory input and drag/resize
+  // New states for mandatory input
   const [callEnded, setCallEnded] = useState(false);
   const [showCloseWarning, setShowCloseWarning] = useState(false);
   const [forceClose, setForceClose] = useState(false);
   const [hasUnsavedData, setHasUnsavedData] = useState(false);
   
-  // Drag and resize state
-  const [position, setPosition] = useState({ x: window.innerWidth - 520, y: 20 });
-  const [size, setSize] = useState({ width: 500, height: 600 });
+  // Drag and resize state (same as before)
+  const [position, setPosition] = useState({ x: window.innerWidth - 420, y: 20 });
+  const [size, setSize] = useState({ width: 400, height: 500 });
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
@@ -44,7 +41,7 @@ export default function CallNotesPanel({ contactId, onClose }) {
       if (savedPos) setPosition(savedPos);
       if (savedSize) setSize(savedSize);
     }
-  }, [contactId]);
+  }, []);
 
   // Save position/size to localStorage
   useEffect(() => {
@@ -56,67 +53,29 @@ export default function CallNotesPanel({ contactId, onClose }) {
   useEffect(() => {
     if (activeCall?.status === 'terminated' || activeCall?.status === 'failed' || activeCall?.status === 'rejected') {
       setCallEnded(true);
+      // Check if there's any data entered
       const hasData = notes.trim() || selectedTags.length > 0 || selectedDisposition;
       setHasUnsavedData(hasData);
     }
   }, [activeCall?.status, notes, selectedTags, selectedDisposition]);
 
-  const loadData = async () => {
-    try {
-      setLoading(true);
-      
-      // Load contact information if we have a valid contactId
-      if (contactId && contactId !== 'active-call') {
-        try {
-          const contactDetails = await api.getContactDetails(contactId);
-          setContactInfo(contactDetails);
-        } catch (error) {
-          console.error('Error loading contact details:', error);
-        }
+  // Prevent closing without data after call ends
+  const handleCloseAttempt = () => {
+    const hasData = notes.trim() || selectedTags.length > 0 || selectedDisposition;
+    
+    if (callEnded && !hasData && !forceClose) {
+      setShowCloseWarning(true);
+    } else if (hasData && !forceClose) {
+      // If there's unsaved data, show a different warning
+      if (window.confirm('You have unsaved notes. Are you sure you want to close without saving?')) {
+        onClose();
       }
-      
-      // Load dispositions and tags from API
-      try {
-        const [dispositionsData, tagsData] = await Promise.all([
-          api.getDispositions(),
-          api.getTags()
-        ]);
-        
-        setDispositions(dispositionsData);
-        setTags(tagsData.map(tag => tag.name || tag));
-      } catch (error) {
-        console.error('Error loading dispositions/tags:', error);
-        // Fallback to mock data if API fails
-        setDispositions([
-          { id: 1, name: 'Successful Contact', color: 'success' },
-          { id: 2, name: 'Not Interested', color: 'danger' },
-          { id: 3, name: 'Call Back Later', color: 'warning' }
-        ]);
-        setTags(['Hot Lead', 'Decision Maker', 'Follow Up Required']);
-      }
-    } catch (error) {
-      console.error('Error in loadData:', error);
-    } finally {
-      setLoading(false);
+    } else {
+      onClose();
     }
   };
 
-  const formatTime = (seconds) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  const formatDateTime = (date) => {
-    return new Date(date).toLocaleString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
-
-  // Mouse event handlers
+  // Mouse event handlers (same as before)
   useEffect(() => {
     const handleMouseMove = (e) => {
       if (isDragging) {
@@ -135,7 +94,7 @@ export default function CallNotesPanel({ contactId, onClose }) {
         const newHeight = resizeStart.height + (e.clientY - resizeStart.y);
         
         setSize({
-          width: Math.max(400, Math.min(newWidth, 800)),
+          width: Math.max(300, Math.min(newWidth, window.innerWidth - position.x)),
           height: Math.max(400, Math.min(newHeight, window.innerHeight - position.y))
         });
       }
@@ -158,8 +117,6 @@ export default function CallNotesPanel({ contactId, onClose }) {
   }, [isDragging, isResizing, dragStart, resizeStart, position, size]);
 
   const handleDragStart = (e) => {
-    if (e.target.closest('.resize-handle')) return;
-    
     const rect = panelRef.current.getBoundingClientRect();
     setDragStart({
       x: e.clientX - rect.left,
@@ -181,17 +138,27 @@ export default function CallNotesPanel({ contactId, onClose }) {
     e.stopPropagation();
   };
 
-  const handleCloseAttempt = () => {
-    const hasData = notes.trim() || selectedTags.length > 0 || selectedDisposition;
-    
-    if (callEnded && !hasData && !forceClose) {
-      setShowCloseWarning(true);
-    } else if (hasData && !forceClose) {
-      if (window.confirm('You have unsaved notes. Close anyway?')) {
-        onClose();
-      }
-    } else {
-      onClose();
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      const [dispositionsData, tagsData] = await Promise.all([
+        api.getDispositions(),
+        api.getTags()
+      ]);
+      
+      setDispositions(dispositionsData);
+      setTags(tagsData.map(tag => tag.name));
+    } catch (error) {
+      console.error('Error loading data:', error);
+      // Fallback to hardcoded values if API fails
+      setDispositions([
+        { id: 1, name: 'Interested', color: 'success' },
+        { id: 2, name: 'Not Interested', color: 'danger' },
+        { id: 3, name: 'Call Back Later', color: 'warning' }
+      ]);
+      setTags(['Hot Lead', 'Decision Maker', 'Follow Up Required']);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -201,6 +168,7 @@ export default function CallNotesPanel({ contactId, onClose }) {
     }
 
     setSaving(true);
+
     try {
       const interactionData = {
         interaction_type: 'note',
@@ -211,7 +179,6 @@ export default function CallNotesPanel({ contactId, onClose }) {
           disposition: selectedDisposition,
           call_related: true,
           call_status: activeCall?.status || 'terminated',
-          call_duration: callDuration,
           call_ended: callEnded
         }
       };
@@ -224,6 +191,7 @@ export default function CallNotesPanel({ contactId, onClose }) {
         });
       }
 
+      // Clear form after save
       setNotes('');
       setSelectedTags([]);
       setSelectedDisposition('');
@@ -231,11 +199,12 @@ export default function CallNotesPanel({ contactId, onClose }) {
       
       alert('Notes saved successfully!');
       
+      // Allow closing after successful save
       setForceClose(true);
       setTimeout(() => onClose(), 1000);
     } catch (error) {
       console.error('Error saving notes:', error);
-      alert('Error saving notes');
+      alert('Error saving notes: ' + error.message);
     } finally {
       setSaving(false);
     }
@@ -254,7 +223,12 @@ export default function CallNotesPanel({ contactId, onClose }) {
 
   if (loading) {
     return (
-      <div style={{ position: 'fixed', bottom: '20px', right: '20px', zIndex: 9999 }}>
+      <div style={{
+        position: 'fixed',
+        bottom: '20px',
+        right: '20px',
+        zIndex: 9999
+      }}>
         <div className="spinner-border" role="status">
           <span className="visually-hidden">Loading...</span>
         </div>
@@ -313,87 +287,28 @@ export default function CallNotesPanel({ contactId, onClose }) {
           </div>
           
           <div className="card-body overflow-auto" style={{ flex: 1 }}>
-            {/* Call Information Section */}
-            <div className="mb-3 p-3 bg-light rounded">
-              <h6 className="mb-2 text-primary">
-                <Phone size={16} className="me-2" />
-                Call Information
-              </h6>
-              <div className="row small">
-                <div className="col-6">
-                  <div className="mb-1">
-                    <strong>Number:</strong> {activeCall?.number || 'Unknown'}
-                  </div>
-                  <div className="mb-1">
-                    <strong>Status:</strong> 
-                    <span className={`ms-1 badge bg-${isCallActive ? 'success' : 'secondary'}`}>
-                      {activeCall?.status || 'Ended'}
-                    </span>
-                  </div>
-                </div>
-                <div className="col-6">
-                  <div className="mb-1">
-                    <strong>Duration:</strong> {formatTime(callDuration)}
-                  </div>
-                  <div className="mb-1">
-                    <strong>Direction:</strong> 
-                    <span className="ms-1">
-                      {activeCall?.isInbound ? 'Inbound' : 'Outbound'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Contact Information Section */}
-            {contactInfo && (
-              <div className="mb-3 p-3 bg-light rounded">
-                <h6 className="mb-2 text-primary">
-                  <User size={16} className="me-2" />
-                  Contact Information
-                </h6>
-                <div className="small">
-                  <div className="mb-1">
-                    <strong>Name:</strong> {contactInfo.first_name} {contactInfo.last_name}
-                  </div>
-                  {contactInfo.company && (
-                    <div className="mb-1">
-                      <Building size={14} className="me-1" />
-                      <strong>Company:</strong> {contactInfo.company}
-                    </div>
-                  )}
-                  {contactInfo.email && (
-                    <div className="mb-1">
-                      <Mail size={14} className="me-1" />
-                      <strong>Email:</strong> {contactInfo.email}
-                    </div>
-                  )}
-                  {contactInfo.last_interaction && (
-                    <div className="mb-1">
-                      <Clock size={14} className="me-1" />
-                      <strong>Last Contact:</strong> {formatDateTime(contactInfo.last_interaction)}
-                    </div>
-                  )}
-                  {contactInfo.campaign_name && (
-                    <div className="mb-1">
-                      <strong>Campaign:</strong> {contactInfo.campaign_name}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
             {/* Warning for call ended without data */}
             {callEnded && !hasData && (
-              <div className="alert alert-warning d-flex align-items-start mb-3">
+              <div className="alert alert-warning d-flex align-items-start">
                 <AlertTriangle size={20} className="me-2 flex-shrink-0 mt-1" />
                 <div>
                   <strong>Call Summary Required</strong>
                   <p className="mb-0 small mt-1">
                     Please add at least one of the following before closing:
-                    notes, disposition, or tags.
+                    <ul className="mb-0 mt-1">
+                      <li>Call notes</li>
+                      <li>Disposition</li>
+                      <li>Tags</li>
+                    </ul>
                   </p>
                 </div>
+              </div>
+            )}
+
+            {/* Status indicator */}
+            {isCallActive && (
+              <div className="alert alert-info py-2 mb-3">
+                <small>📞 Call in progress</small>
               </div>
             )}
 
@@ -409,7 +324,7 @@ export default function CallNotesPanel({ contactId, onClose }) {
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 disabled={saving}
-                style={{ resize: 'vertical' }}
+                style={{ resize: 'none' }}
               />
             </div>
 
@@ -509,7 +424,7 @@ export default function CallNotesPanel({ contactId, onClose }) {
         </div>
       </div>
 
-      {/* Close Warning Modal (same as before) */}
+      {/* Close Warning Modal */}
       {showCloseWarning && (
         <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 10000 }}>
           <div className="modal-dialog modal-dialog-centered">

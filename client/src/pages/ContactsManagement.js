@@ -15,7 +15,6 @@ import EditContactModal from '../components/EditContactModal';
 import ViewContactModal from '../components/ViewContactModal';
 import CustomFieldsSearchModal from '../components/CustomFieldsSearchModal';
 import CustomFieldsDisplay from '../components/CustomFieldsDisplay';
-import CallNotesPanel from '../components/CallNotesPanel'; // ADD THIS IMPORT
 import '../styles/ContactsManagement.css';
 
 export default function ContactsManagement() {
