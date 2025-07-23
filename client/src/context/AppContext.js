@@ -1,7 +1,8 @@
-// src/context/AppContext.js
+// client/src/context/AppContext.js - Updated with UserData cleanup
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { api } from '../services/api';
 import SipService from '../services/SipService';
+import { dedupApi } from '../utils/apiDeduplication';
 
 const AppContext = createContext(null);
 
@@ -50,6 +51,9 @@ export const AppProvider = ({ children }) => {
       // First clean up SIP
       await SipService.cleanupConnection();
       
+      // Clear deduplicated API cache
+      dedupApi.clearAllCache();
+      
       // Then call logout API
       try {
         await api.logout();
@@ -57,8 +61,8 @@ export const AppProvider = ({ children }) => {
         console.error('Error calling logout API:', error);
       }
 
-      // Always clean up storage
-      localStorage.clear(); // Clear all storage instead of individual items
+      // Clear all local storage
+      localStorage.clear();
       setIsInitialized(false);
 
       console.log('Logout completed successfully');
@@ -67,6 +71,7 @@ export const AppProvider = ({ children }) => {
       console.error('Error during logout:', error);
       // Clean up anyway
       localStorage.clear();
+      dedupApi.clearAllCache();
       setIsInitialized(false);
       return true;
     }

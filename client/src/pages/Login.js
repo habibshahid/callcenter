@@ -1,7 +1,8 @@
-// src/pages/Login.js
+// client/src/pages/Login.js - Updated with proper data loading
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
+import { useUserData } from '../context/UserDataContext';
 
 export default function Login() {
   const [credentials, setCredentials] = useState({ username: '', password: '' });
@@ -9,6 +10,7 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const { initializeSip } = useApp();
+  const { loadAllUserData } = useUserData();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -30,10 +32,18 @@ export default function Login() {
         throw new Error(data.message || 'Login failed');
       }
 
+      // Store authentication data
       localStorage.setItem('token', data.token);
       localStorage.setItem('user', JSON.stringify(data.user));
       
-      await initializeSip();
+      // Load all user data after successful login
+      // This prevents duplicate calls when components mount
+      await Promise.all([
+        initializeSip(),
+        loadAllUserData()
+      ]);
+      
+      // Navigate to dashboard after everything is loaded
       navigate('/dashboard');
     } catch (error) {
       console.error('Login error:', error);
@@ -68,6 +78,7 @@ export default function Login() {
                 })}
                 required
                 disabled={loading}
+                autoFocus
               />
             </div>
             
@@ -91,9 +102,22 @@ export default function Login() {
               className="btn btn-primary w-100"
               disabled={loading}
             >
-              {loading ? 'Logging in...' : 'Login'}
+              {loading ? (
+                <>
+                  <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                  Logging in...
+                </>
+              ) : (
+                'Login'
+              )}
             </button>
           </form>
+
+          <div className="text-center mt-3">
+            <small className="text-muted">
+              Tip: Press Enter to submit after filling in your credentials
+            </small>
+          </div>
         </div>
       </div>
     </div>

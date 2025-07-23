@@ -1,12 +1,12 @@
-// client/src/pages/ContactsManagement.js - Updated section with proper imports
-import React, { useState, useEffect, useCallback } from 'react';
+// client/src/pages/ContactsManagement.js - Complete Optimized Version
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { 
   Search, Upload, Download, Phone, Mail, Filter, Plus, Edit, 
   Eye, ChevronLeft, ChevronRight, Users, CheckCircle, AlertCircle,
   Trash2, UserCheck, Tag, RefreshCw, FileSpreadsheet, Save, Database, X
 } from 'lucide-react';
 import { api } from '../services/api';
-import { useCall } from '../context/CallContext'; // ADD THIS IMPORT
+import { useCall } from '../context/CallContext';
 import { debounce } from 'lodash';
 import EnhancedImportModal from '../components/EnhancedImportModal';
 import DuplicateManager from '../components/DuplicateManager';
@@ -17,9 +17,13 @@ import CustomFieldsSearchModal from '../components/CustomFieldsSearchModal';
 import CustomFieldsDisplay from '../components/CustomFieldsDisplay';
 import '../styles/ContactsManagement.css';
 
+// Cache for API responses
+const apiCache = new Map();
+const CACHE_DURATION = 30000; // 30 seconds
+
 export default function ContactsManagement() {
-  // Get activeCall and handleDial from CallContext
-  const { handleDial, activeCall } = useCall(); // ADD THIS LINE
+  // Get handleDial and activeCall from CallContext
+  const { handleDial, activeCall } = useCall();
   
   // State
   const [contacts, setContacts] = useState([]);
@@ -48,6 +52,7 @@ export default function ContactsManagement() {
     total: 0,
     pages: 1
   });
+
   const [showImportModal, setShowImportModal] = useState(false);
   const [selectedContacts, setSelectedContacts] = useState(new Set());
   const [bulkAction, setBulkAction] = useState('');
@@ -65,10 +70,15 @@ export default function ContactsManagement() {
   const [customFieldsSearchActive, setCustomFieldsSearchActive] = useState(false);
   const [customFieldsFilters, setCustomFieldsFilters] = useState(null);
 
-  // ADD THESE NEW STATE VARIABLES FOR CALL TRACKING
+  // Track calling numbers
   const [callingNumbers, setCallingNumbers] = useState(new Set());
 
-  // ADD THIS EFFECT TO TRACK ACTIVE CALLS
+  // Refs to prevent duplicate operations
+  const isInitialMount = useRef(true);
+  const loadContactsTimeoutRef = useRef(null);
+  const hasLoadedInitialData = useRef(false);
+
+  // Track active call status
   useEffect(() => {
     if (activeCall) {
       // Clear callingNumbers when call connects
@@ -86,53 +96,119 @@ export default function ContactsManagement() {
     }
   }, [activeCall]);
 
-  // Load initial data
-  useEffect(() => {
-    loadCampaigns();
-    loadAgents();
-    loadSavedFilters();
+  // Cached API call helper
+  const cachedApiCall = useCallback(async (key, apiFunction, forceRefresh = false) => {
+    const cached = apiCache.get(key);
+    const now = Date.now();
+    
+    if (!forceRefresh && cached && (now - cached.timestamp < CACHE_DURATION)) {
+      return cached.data;
+    }
+    
+    const data = await apiFunction();
+    apiCache.set(key, { data, timestamp: now });
+    return data;
   }, []);
 
-  // Load contacts when filters change
+  // Load initial data - only once
   useEffect(() => {
-    if (!customFieldsSearchActive) {
-      loadContacts();
+    if (!hasLoadedInitialData.current) {
+      hasLoadedInitialData.current = true;
+      
+      const loadInitialData = async () => {
+        try {
+          // Load campaigns and agents in parallel using cache
+          const [campaignsData, agentsData] = await Promise.all([
+            cachedApiCall('campaigns', api.getCampaigns),
+            cachedApiCall('agents', api.getActiveAgents)
+          ]);
+          
+          setCampaigns(campaignsData);
+          setAgents(agentsData);
+          
+          if (campaignsData.length > 0 && !selectedCampaign) {
+            setSelectedCampaign(campaignsData[0].id);
+          }
+          
+          // Load saved filters from localStorage
+          const saved = localStorage.getItem('contactFilters');
+          if (saved) {
+            setSavedFilters(JSON.parse(saved));
+          }
+        } catch (error) {
+          console.error('Error loading initial data:', error);
+        }
+      };
+      
+      loadInitialData();
     }
-  }, [selectedCampaign, filters.status, filters.assigned_to, pagination.page]);
+  }, []); // Empty dependency array - runs only once
 
-  // Debounced search
-  const debouncedSearch = useCallback(
-    debounce((query) => {
-      if (!customFieldsSearchActive) {
-        loadContacts(query);
+  // Create stable debounced load function
+  const debouncedLoadContacts = useMemo(
+    () => debounce(() => {
+      if (!customFieldsSearchActive && selectedCampaign) {
+        loadContacts();
       }
     }, 300),
-    [selectedCampaign, filters, customFieldsSearchActive]
+    [] // No dependencies - stable reference
   );
 
-  useEffect(() => {
-    if (searchQuery && !customFieldsSearchActive) {
-      debouncedSearch(searchQuery);
-    } else if (!searchQuery && !customFieldsSearchActive) {
-      loadContacts();
+  // Main load contacts function
+  const loadContacts = async (search = searchQuery, colFilters = columnFilters) => {
+    try {
+      setLoading(true);
+      const params = {
+        page: pagination.page,
+        limit: pagination.limit,
+        campaign_id: selectedCampaign,
+        ...(filters.status && { status: filters.status }),
+        ...(filters.assigned_to && { assigned_to: filters.assigned_to }),
+        ...(search && { search }),
+        // Add column filters
+        ...(colFilters.name && { filter_name: colFilters.name }),
+        ...(colFilters.phone && { filter_phone: colFilters.phone }),
+        ...(colFilters.email && { filter_email: colFilters.email }),
+        ...(colFilters.company && { filter_company: colFilters.company }),
+        ...(colFilters.last_contact && { filter_last_contact: colFilters.last_contact })
+      };
+
+      const data = await api.getContactsList(params);
+      setContacts(data.contacts);
+      setPagination(data.pagination);
+    } catch (error) {
+      console.error('Error loading contacts:', error);
+    } finally {
+      setLoading(false);
     }
-  }, [searchQuery]);
+  };
 
-  // Debounced column filters
-  const debouncedColumnFilter = useCallback(
-    debounce((filterValues) => {
-      if (customFieldsSearchActive) {
-        loadContactsWithCustomFields();
-      } else {
-        loadContacts(searchQuery, filterValues);
-      }
-    }, 300),
-    [searchQuery, customFieldsSearchActive, customFieldsFilters]
-  );
-
+  // Single useEffect for all filter changes
   useEffect(() => {
-    debouncedColumnFilter(columnFilters);
-  }, [columnFilters]);
+    // Skip initial mount to prevent duplicate loads
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
+    }
+    
+    if (!customFieldsSearchActive && selectedCampaign) {
+      // Cancel any pending load
+      if (loadContactsTimeoutRef.current) {
+        clearTimeout(loadContactsTimeoutRef.current);
+      }
+      
+      // Debounce the load
+      loadContactsTimeoutRef.current = setTimeout(() => {
+        loadContacts();
+      }, 300);
+    }
+    
+    return () => {
+      if (loadContactsTimeoutRef.current) {
+        clearTimeout(loadContactsTimeoutRef.current);
+      }
+    };
+  }, [selectedCampaign, filters.status, filters.assigned_to, searchQuery, columnFilters, pagination.page, customFieldsSearchActive]);
 
   // Load contacts with custom fields search when pagination changes
   useEffect(() => {
@@ -140,6 +216,31 @@ export default function ContactsManagement() {
       loadContactsWithCustomFields();
     }
   }, [pagination.page]);
+
+  const loadContactsWithCustomFields = async () => {
+    if (!customFieldsFilters) return;
+
+    try {
+      setLoading(true);
+      const response = await api.searchContactsByCustomFields({
+        ...customFieldsFilters,
+        page: pagination.page,
+        limit: pagination.limit,
+        include_standard_filters: {
+          status: filters.status,
+          assigned_to: filters.assigned_to
+        },
+        column_filters: columnFilters
+      });
+
+      setContacts(response.contacts);
+      setPagination(response.pagination);
+    } catch (error) {
+      console.error('Error loading custom fields search results:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleCustomFieldsSearch = async (searchParams) => {
     try {
@@ -193,181 +294,52 @@ export default function ContactsManagement() {
     }
   };
 
-  const loadContactsWithCustomFields = async () => {
-    if (!customFieldsFilters) return;
-
-    try {
-      setLoading(true);
-      const response = await api.searchContactsByCustomFields({
-        ...customFieldsFilters,
-        page: pagination.page,
-        limit: pagination.limit,
-        include_standard_filters: {
-          status: filters.status,
-          assigned_to: filters.assigned_to
-        },
-        column_filters: columnFilters
-      });
-
-      setContacts(response.contacts);
-      setPagination(response.pagination);
-    } catch (error) {
-      console.error('Error loading custom fields search results:', error);
-    } finally {
-      setLoading(false);
+  const handleCall = async (phoneNumber, contactId) => {
+    // Check if any call is in progress
+    if (activeCall && !['Terminated', 'Failed', 'Rejected', 'terminated', 'failed', 'rejected'].includes(activeCall.status)) {
+      alert('A call is already in progress. Please end the current call first.');
+      return;
     }
-  };
 
-  const handleViewContact = (contactId) => {
-    setSelectedContactIdForView(contactId);
-    setShowViewModal(true);
-  };
-
-  const handleEditContact = (contact) => {
-    setSelectedContactForEdit(contact);
-    setShowEditModal(true);
-  };
-
-  const handleAddSuccess = () => {
-    if (customFieldsSearchActive) {
-      loadContactsWithCustomFields();
-    } else {
-      loadContacts();
-    }
-    alert('Contact added successfully!');
-  };
-
-  const handleEditSuccess = () => {
-    if (customFieldsSearchActive) {
-      loadContactsWithCustomFields();
-    } else {
-      loadContacts();
-    }
-    alert('Contact updated successfully!');
-  };
-
-  const handleDeleteContact = async (contactId) => {
-    if (!window.confirm('Are you sure you want to delete this contact?')) {
+    // Check if this number is already being dialed
+    if (callingNumbers.has(phoneNumber)) {
       return;
     }
 
     try {
-      await api.deleteContact(contactId);
-      if (customFieldsSearchActive) {
-        loadContactsWithCustomFields();
-      } else {
-        loadContacts();
-      }
-      alert('Contact deleted successfully');
+      // Add to calling numbers set
+      setCallingNumbers(prev => new Set([...prev, phoneNumber]));
+      
+      // Pass contactId to handleDial
+      await handleDial(phoneNumber, contactId);
     } catch (error) {
-      console.error('Error deleting contact:', error);
-      alert('Error deleting contact');
-    }
-  };
-
-  const loadCampaigns = async () => {
-    try {
-      const data = await api.getCampaigns();
-      setCampaigns(data);
-      if (data.length > 0 && !selectedCampaign) {
-        setSelectedCampaign(data[0].id);
-      }
-    } catch (error) {
-      console.error('Error loading campaigns:', error);
-    }
-  };
-
-  const loadAgents = async () => {
-    try {
-      const data = await api.getActiveAgents();
-      setAgents(data);
-    } catch (error) {
-      console.error('Error loading agents:', error);
-    }
-  };
-
-  const loadContacts = async (search = searchQuery, colFilters = columnFilters) => {
-    try {
-      setLoading(true);
-      const params = {
-        page: pagination.page,
-        limit: pagination.limit,
-        campaign_id: selectedCampaign,
-        ...(filters.status && { status: filters.status }),
-        ...(filters.assigned_to && { assigned_to: filters.assigned_to }),
-        ...(search && { search }),
-        // Add column filters
-        ...(colFilters.name && { filter_name: colFilters.name }),
-        ...(colFilters.phone && { filter_phone: colFilters.phone }),
-        ...(colFilters.email && { filter_email: colFilters.email }),
-        ...(colFilters.company && { filter_company: colFilters.company }),
-        ...(colFilters.last_contact && { filter_last_contact: colFilters.last_contact })
-      };
-
-      const data = await api.getContactsList(params);
-      setContacts(data.contacts);
-      setPagination(data.pagination);
-    } catch (error) {
-      console.error('Error loading contacts:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadSavedFilters = () => {
-    const saved = localStorage.getItem('contactFilters');
-    if (saved) {
-      setSavedFilters(JSON.parse(saved));
-    }
-  };
-
-  const saveCurrentFilter = () => {
-    const filterName = prompt('Enter a name for this filter:');
-    if (filterName) {
-      const newFilter = {
-        id: Date.now(),
-        name: filterName,
-        campaign_id: selectedCampaign,
-        ...filters,
-        search: searchQuery,
-        columnFilters: columnFilters,
-        isCustomFields: customFieldsSearchActive,
-        customFieldsFilters: customFieldsFilters
-      };
-      const updated = [...savedFilters, newFilter];
-      setSavedFilters(updated);
-      localStorage.setItem('contactFilters', JSON.stringify(updated));
-    }
-  };
-
-  const loadSavedFilter = (filter) => {
-    if (filter.isCustomFields && filter.customFieldsFilters) {
-      setSelectedCampaign(filter.campaign_id);
-      setColumnFilters(filter.columnFilters || {
-        name: '',
-        phone: '',
-        email: '',
-        company: '',
-        last_contact: ''
+      console.error('Error making call:', error);
+      alert(`Failed to call ${phoneNumber}`);
+      // Remove from calling numbers on error
+      setCallingNumbers(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(phoneNumber);
+        return newSet;
       });
-      handleCustomFieldsSearch(filter.customFieldsFilters);
+    }
+  };
+
+  const handleSelectAll = (e) => {
+    if (e.target.checked) {
+      setSelectedContacts(new Set(contacts.map(c => c.id)));
     } else {
-      setSelectedCampaign(filter.campaign_id);
-      setFilters({
-        status: filter.status || '',
-        assigned_to: filter.assigned_to || ''
-      });
-      setSearchQuery(filter.search || '');
-      setColumnFilters(filter.columnFilters || {
-        name: '',
-        phone: '',
-        email: '',
-        company: '',
-        last_contact: ''
-      });
-      setCustomFieldsSearchActive(false);
+      setSelectedContacts(new Set());
     }
-    setShowFilterMenu(false);
+  };
+
+  const handleSelectContact = (contactId) => {
+    const newSelected = new Set(selectedContacts);
+    if (newSelected.has(contactId)) {
+      newSelected.delete(contactId);
+    } else {
+      newSelected.add(contactId);
+    }
+    setSelectedContacts(newSelected);
   };
 
   const handleBulkAction = async () => {
@@ -457,653 +429,612 @@ export default function ContactsManagement() {
     }
   };
 
-  // UPDATED handleCall function
-  const handleCall = async (phoneNumber, contactId) => {
-    // Check if any call is in progress
-    if (activeCall && !['Terminated', 'Failed', 'Rejected', 'terminated', 'failed', 'rejected'].includes(activeCall.status)) {
-      alert('A call is already in progress. Please end the current call first.');
-      return;
+  const saveCurrentFilter = () => {
+    const filterName = prompt('Enter a name for this filter:');
+    if (filterName) {
+      const newFilter = {
+        id: Date.now(),
+        name: filterName,
+        campaign_id: selectedCampaign,
+        ...filters,
+        search: searchQuery,
+        columnFilters: columnFilters,
+        isCustomFields: customFieldsSearchActive,
+        customFieldsFilters: customFieldsFilters
+      };
+      const updated = [...savedFilters, newFilter];
+      setSavedFilters(updated);
+      localStorage.setItem('contactFilters', JSON.stringify(updated));
     }
+  };
 
-    // Check if this number is already being dialed
-    if (callingNumbers.has(phoneNumber)) {
+  const loadSavedFilter = (filter) => {
+    if (filter.isCustomFields && filter.customFieldsFilters) {
+      setSelectedCampaign(filter.campaign_id);
+      setColumnFilters(filter.columnFilters || {
+        name: '',
+        phone: '',
+        email: '',
+        company: '',
+        last_contact: ''
+      });
+      handleCustomFieldsSearch(filter.customFieldsFilters);
+    } else {
+      setSelectedCampaign(filter.campaign_id);
+      setFilters({
+        status: filter.status || '',
+        assigned_to: filter.assigned_to || ''
+      });
+      setSearchQuery(filter.search || '');
+      setColumnFilters(filter.columnFilters || {
+        name: '',
+        phone: '',
+        email: '',
+        company: '',
+        last_contact: ''
+      });
+      setCustomFieldsSearchActive(false);
+    }
+    setShowFilterMenu(false);
+  };
+
+  const handleViewContact = (contactId) => {
+    setSelectedContactIdForView(contactId);
+    setShowViewModal(true);
+  };
+
+  const handleEditContact = (contact) => {
+    setSelectedContactForEdit(contact);
+    setShowEditModal(true);
+  };
+
+  const handleAddSuccess = () => {
+    if (customFieldsSearchActive) {
+      loadContactsWithCustomFields();
+    } else {
+      loadContacts();
+    }
+    alert('Contact added successfully!');
+  };
+
+  const handleEditSuccess = () => {
+    if (customFieldsSearchActive) {
+      loadContactsWithCustomFields();
+    } else {
+      loadContacts();
+    }
+    alert('Contact updated successfully!');
+  };
+
+  const handleDeleteContact = async (contactId) => {
+    if (!window.confirm('Are you sure you want to delete this contact?')) {
       return;
     }
 
     try {
-      // Add to calling numbers set
-      setCallingNumbers(prev => new Set([...prev, phoneNumber]));
-      
-      // Pass contactId to handleDial
-      await handleDial(phoneNumber, contactId);
+      await api.deleteContact(contactId);
+      if (customFieldsSearchActive) {
+        loadContactsWithCustomFields();
+      } else {
+        loadContacts();
+      }
+      alert('Contact deleted successfully');
     } catch (error) {
-      console.error('Error making call:', error);
-      alert(`Failed to call ${phoneNumber}`);
-      // Remove from calling numbers on error
-      setCallingNumbers(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(phoneNumber);
-        return newSet;
-      });
+      console.error('Error deleting contact:', error);
+      alert('Error deleting contact');
     }
   };
 
-  const handleSelectAll = (e) => {
-    if (e.target.checked) {
-      setSelectedContacts(new Set(contacts.map(c => c.id)));
-    } else {
-      setSelectedContacts(new Set());
-    }
-  };
-
-  const handleSelectContact = (contactId) => {
-    const newSelected = new Set(selectedContacts);
-    if (newSelected.has(contactId)) {
-      newSelected.delete(contactId);
-    } else {
-      newSelected.add(contactId);
-    }
-    setSelectedContacts(newSelected);
-  };
-
-  const updateColumnFilter = (column, value) => {
-    setColumnFilters(prev => ({
-      ...prev,
-      [column]: value
-    }));
-    setPagination(prev => ({ ...prev, page: 1 })); // Reset to first page
-  };
-
-  const getStatusBadgeClass = (status) => {
-    const statusClasses = {
-      'new': 'bg-primary',
-      'contacted': 'bg-info',
-      'interested': 'bg-success',
-      'not_interested': 'bg-warning',
-      'do_not_call': 'bg-danger',
-      'invalid': 'bg-secondary'
-    };
-    return statusClasses[status] || 'bg-secondary';
-  };
-
-  // Check if any filters are active
-  const hasActiveFilters = () => {
-    return searchQuery || 
-           filters.status || 
-           filters.assigned_to || 
-           Object.values(columnFilters).some(v => v) || 
-           customFieldsSearchActive;
+  const getPhoneDisplay = (contact) => {
+    const phoneNumber = contact.phone_primary || contact.phone;
+    const isDialing = callingNumbers.has(phoneNumber);
+    const isInCall = activeCall && 
+      (activeCall.number === phoneNumber || activeCall.number === contact.phone_primary) &&
+      !['Terminated', 'Failed', 'Rejected', 'terminated', 'failed', 'rejected'].includes(activeCall.status);
+    
+    return { phoneNumber, isDialing, isInCall };
   };
 
   return (
-    <div className="container-fluid py-4">
+    <div className="p-4">
       {/* Header */}
-      <div className="row mb-4">
-        <div className="col">
-          <h2 className="mb-0">Leads Management</h2>
-        </div>
-        <div className="col-auto">
-          <div className="btn-group">
-            <button 
-              className="btn btn-primary"
-              onClick={() => setShowImportModal(true)}
-            >
-              <Upload size={18} className="me-2" />
-              Import
-            </button>
-            <button 
-              className="btn btn-outline-primary"
-              onClick={() => handleExport()}
-            >
-              <Download size={18} className="me-2" />
-              Export All
-            </button>
-            <button 
-              className="btn btn-outline-warning"
-              onClick={() => setShowDuplicateManager(true)}
-            >
-              <Users size={18} className="me-2" />
-              Find Duplicates
-            </button>
-            <button 
-              className="btn btn-outline-primary"
-              onClick={() => setShowAddModal(true)}
-            >
-              <Plus size={18} className="me-2" />
-              Add Contact
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* ADD THIS: Call status indicator */}
-      {(activeCall && !['Terminated', 'Failed', 'Rejected', 'terminated', 'failed', 'rejected', 'active'].includes(activeCall.status)) && (
-        <div className="position-fixed top-0 start-50 translate-middle-x mt-5 pt-3" style={{ zIndex: 1050 }}>
-          <div className="alert alert-warning d-flex align-items-center shadow">
-            <div className="spinner-border spinner-border-sm me-2" />
-            <span>
-              Call in progress with {activeCall.number}
-              {activeCall.status === 'trying' && ' - Connecting...'}
-              {activeCall.status === 'connecting' && ' - Establishing connection...'}
-              {activeCall.status === 'ringing' && ' - Ringing...'}
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* Custom Fields Search Indicator */}
-      {customFieldsSearchActive && (
-        <div className="alert alert-warning custom-fields-active d-flex justify-content-between align-items-center mb-3">
-          <div>
-            <Database size={18} className="me-2" />
-            <strong>Custom Fields Search Active</strong> - Showing filtered results based on custom data
-          </div>
+      <div className="d-flex justify-content-between align-items-center mb-4">
+        <h2>Contacts Management</h2>
+        <div className="d-flex gap-2">
           <button 
-            className="btn btn-sm btn-outline-dark"
-            onClick={clearCustomFieldsSearch}
+            className="btn btn-outline-primary"
+            onClick={() => setShowCustomFieldsSearch(true)}
           >
-            Clear Custom Search
+            <Database size={18} className="me-2" />
+            Advanced Search
+          </button>
+          <button 
+            className="btn btn-outline-primary"
+            onClick={() => setShowDuplicateManager(true)}
+          >
+            <Users size={18} className="me-2" />
+            Find Duplicates
+          </button>
+          <button 
+            className="btn btn-primary"
+            onClick={() => setShowAddModal(true)}
+          >
+            <Plus size={18} className="me-2" />
+            Add Contact
+          </button>
+          <button 
+            className="btn btn-success"
+            onClick={() => setShowImportModal(true)}
+          >
+            <Upload size={18} className="me-2" />
+            Import
+          </button>
+          <button 
+            className="btn btn-info"
+            onClick={() => handleExport()}
+          >
+            <Download size={18} className="me-2" />
+            Export
           </button>
         </div>
-      )}
-
-      {/* Filters Row */}
-      <div className="row mb-3">
-        <div className="col-md-2">
-          <select 
-            className="form-select"
-            value={selectedCampaign}
-            onChange={(e) => {
-              setSelectedCampaign(e.target.value);
-              if (customFieldsSearchActive) clearCustomFieldsSearch();
-            }}
-            disabled={customFieldsSearchActive}
-          >
-            <option value="">Select Campaign</option>
-            {campaigns.map(campaign => (
-              <option key={campaign.id} value={campaign.id}>
-                {campaign.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="col-md-2">
-          <select 
-            className="form-select"
-            value={filters.status}
-            onChange={(e) => {
-              setFilters({...filters, status: e.target.value});
-              if (customFieldsSearchActive) {
-                loadContactsWithCustomFields();
-              }
-            }}
-          >
-            <option value="">All Status</option>
-            <option value="new">New</option>
-            <option value="contacted">Contacted</option>
-            <option value="interested">Interested</option>
-            <option value="not_interested">Not Interested</option>
-            <option value="do_not_call">Do Not Call</option>
-            <option value="invalid">Invalid</option>
-          </select>
-        </div>
-        <div className="col-md-2">
-          <select 
-            className="form-select"
-            value={filters.assigned_to}
-            onChange={(e) => {
-              setFilters({...filters, assigned_to: e.target.value});
-              if (customFieldsSearchActive) {
-                loadContactsWithCustomFields();
-              }
-            }}
-          >
-            <option value="">All Agents</option>
-            {agents.map(agent => (
-              <option key={agent.id} value={agent.id}>
-                {agent.username}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="col-md-4">
-          <div className="input-group">
-            <span className="input-group-text">
-              <Search size={18} />
-            </span>
-            <input
-              type="text"
-              className="form-control"
-              placeholder="Search by name, phone, email..."
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                if (customFieldsSearchActive) clearCustomFieldsSearch();
-              }}
-              disabled={customFieldsSearchActive}
-            />
-            <button 
-              className="btn btn-primary btn-custom-fields"
-              onClick={() => setShowCustomFieldsSearch(true)}
-              title="Search Custom Fields"
-              disabled={!selectedCampaign}
-            >
-              <Database size={18} className="me-1" />
-              Custom Fields
-            </button>
-          </div>
-        </div>
-        <div className="col-md-2">
-          <div className="btn-group w-100">
-            <button 
-              className="btn btn-outline-secondary"
-              onClick={() => setShowFilterMenu(!showFilterMenu)}
-            >
-              <Filter size={18} className="me-2" />
-              Filters
-            </button>
-            <button 
-              className="btn btn-outline-secondary"
-              onClick={saveCurrentFilter}
-              title="Save current filter"
-            >
-              <Save size={18} />
-            </button>
-          </div>
-        </div>
       </div>
 
-      {/* Clear All Filters Button */}
-      {hasActiveFilters() && (
-        <div className="row mb-3">
-          <div className="col text-end">
-            <button 
-              className="btn btn-sm btn-outline-danger"
-              onClick={clearAllFilters}
-            >
-              <X size={16} className="me-1" />
-              Clear All Filters
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Saved Filters Dropdown */}
-      {showFilterMenu && savedFilters.length > 0 && (
-        <div className="row mb-3">
-          <div className="col">
-            <div className="card shadow-sm">
-              <div className="card-body">
-                <h6 className="card-title mb-3">Saved Filters</h6>
-                <div className="d-flex flex-wrap gap-2">
-                  {savedFilters.map(filter => (
-                    <button
-                      key={filter.id}
-                      className="btn btn-sm btn-outline-primary"
-                      onClick={() => loadSavedFilter(filter)}
-                    >
-                      {filter.name}
-                      {filter.isCustomFields && <Database size={14} className="ms-1" />}
-                    </button>
-                  ))}
-                </div>
+      {/* Filters Section */}
+      <div className="card mb-3">
+        <div className="card-body">
+          <div className="row g-3">
+            <div className="col-md-3">
+              <label className="form-label">Campaign</label>
+              <select 
+                className="form-select"
+                value={selectedCampaign}
+                onChange={(e) => setSelectedCampaign(e.target.value)}
+              >
+                <option value="">Select Campaign</option>
+                {campaigns.map(campaign => (
+                  <option key={campaign.id} value={campaign.id}>
+                    {campaign.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="col-md-3">
+              <label className="form-label">Status</label>
+              <select 
+                className="form-select"
+                value={filters.status}
+                onChange={(e) => setFilters({ ...filters, status: e.target.value })}
+              >
+                <option value="">All Status</option>
+                <option value="new">New</option>
+                <option value="contacted">Contacted</option>
+                <option value="interested">Interested</option>
+                <option value="not_interested">Not Interested</option>
+                <option value="do_not_call">Do Not Call</option>
+              </select>
+            </div>
+            <div className="col-md-3">
+              <label className="form-label">Assigned To</label>
+              <select 
+                className="form-select"
+                value={filters.assigned_to}
+                onChange={(e) => setFilters({ ...filters, assigned_to: e.target.value })}
+              >
+                <option value="">All Agents</option>
+                {agents.map(agent => (
+                  <option key={agent.id} value={agent.id}>
+                    {agent.first_name} {agent.last_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="col-md-3">
+              <label className="form-label">Search</label>
+              <div className="input-group">
+                <input 
+                  type="text" 
+                  className="form-control" 
+                  placeholder="Search contacts..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+                <button 
+                  className="btn btn-outline-secondary"
+                  onClick={() => loadContacts()}
+                >
+                  <Search size={18} />
+                </button>
               </div>
             </div>
           </div>
-        </div>
-      )}
 
-      {/* Stats and Bulk Actions Bar */}
-      <div className="row mb-3">
-        <div className="col-md-6">
-          <div className="d-flex align-items-center gap-3 text-muted small">
-            <span>
-              <Users size={16} className="me-1" />
-              Total: {pagination.total}
-            </span>
-            <span>
-              <CheckCircle size={16} className="me-1" />
-              Selected: {selectedContacts.size}
-            </span>
-            <button 
-              className="btn btn-link btn-sm p-0"
-              onClick={() => {
-                setPagination({...pagination, page: 1});
-                if (customFieldsSearchActive) {
-                  loadContactsWithCustomFields();
-                } else {
-                  loadContacts();
-                }
-              }}
-            >
-              <RefreshCw size={16} />
-            </button>
+          {/* Filter Actions */}
+          <div className="d-flex justify-content-between align-items-center mt-3">
+            <div className="d-flex gap-2">
+              <button 
+                className="btn btn-sm btn-outline-secondary"
+                onClick={clearAllFilters}
+              >
+                <X size={16} className="me-1" />
+                Clear Filters
+              </button>
+              <button 
+                className="btn btn-sm btn-outline-secondary"
+                onClick={saveCurrentFilter}
+              >
+                <Save size={16} className="me-1" />
+                Save Filter
+              </button>
+              <div className="dropdown">
+                <button 
+                  className="btn btn-sm btn-outline-secondary dropdown-toggle"
+                  onClick={() => setShowFilterMenu(!showFilterMenu)}
+                >
+                  <Filter size={16} className="me-1" />
+                  Saved Filters
+                </button>
+                {showFilterMenu && (
+                  <div className="dropdown-menu show">
+                    {savedFilters.length === 0 ? (
+                      <span className="dropdown-item text-muted">No saved filters</span>
+                    ) : (
+                      savedFilters.map(filter => (
+                        <button 
+                          key={filter.id}
+                          className="dropdown-item"
+                          onClick={() => loadSavedFilter(filter)}
+                        >
+                          {filter.name}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Custom Fields Search Active Indicator */}
+            {customFieldsSearchActive && (
+              <div className="alert alert-info mb-0 py-1 px-2 d-flex align-items-center">
+                <Database size={16} className="me-2" />
+                <span className="small">Custom fields search active</span>
+                <button 
+                  className="btn btn-sm btn-link p-0 ms-2"
+                  onClick={clearCustomFieldsSearch}
+                >
+                  Clear
+                </button>
+              </div>
+            )}
           </div>
         </div>
-        <div className="col-md-6">
-          {selectedContacts.size > 0 && (
-            <div className="d-flex justify-content-end align-items-center gap-2">
+      </div>
+
+      {/* Bulk Actions */}
+      {selectedContacts.size > 0 && (
+        <div className="card mb-3">
+          <div className="card-body py-2">
+            <div className="d-flex align-items-center gap-3">
+              <span className="badge bg-primary">
+                {selectedContacts.size} selected
+              </span>
               <select 
-                className="form-select form-select-sm" 
-                style={{width: '200px'}}
+                className="form-select form-select-sm w-auto"
                 value={bulkAction}
                 onChange={(e) => setBulkAction(e.target.value)}
               >
-                <option value="">Bulk Actions</option>
+                <option value="">Choose action...</option>
                 <option value="assign">Assign to Agent</option>
                 <option value="status">Change Status</option>
                 <option value="export">Export Selected</option>
-                <option value="delete">Delete Selected</option>
+                <option value="delete">Delete</option>
               </select>
               <button 
-                className="btn btn-primary btn-sm"
+                className="btn btn-sm btn-primary"
                 onClick={handleBulkAction}
                 disabled={!bulkAction}
               >
                 Apply
               </button>
+              <button 
+                className="btn btn-sm btn-outline-secondary"
+                onClick={() => setSelectedContacts(new Set())}
+              >
+                Clear Selection
+              </button>
             </div>
-          )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Contacts Table */}
       <div className="card">
-        <div className="table-responsive">
-          <table className="table table-hover mb-0">
-            <thead>
-              <tr>
-                <th width="40">
-                  <input
-                    type="checkbox"
-                    className="form-check-input"
-                    onChange={handleSelectAll}
-                    checked={selectedContacts.size === contacts.length && contacts.length > 0}
-                  />
-                </th>
-                <th>
-                  Name
-                  <input
-                    type="text"
-                    className="form-control form-control-sm mt-1"
-                    placeholder="Filter name..."
-                    value={columnFilters.name}
-                    onChange={(e) => updateColumnFilter('name', e.target.value)}
-                  />
-                </th>
-                <th>
-                  Phone
-                  <input
-                    type="text"
-                    className="form-control form-control-sm mt-1"
-                    placeholder="Filter phone..."
-                    value={columnFilters.phone}
-                    onChange={(e) => updateColumnFilter('phone', e.target.value)}
-                  />
-                </th>
-                <th>
-                  Email
-                  <input
-                    type="text"
-                    className="form-control form-control-sm mt-1"
-                    placeholder="Filter email..."
-                    value={columnFilters.email}
-                    onChange={(e) => updateColumnFilter('email', e.target.value)}
-                  />
-                </th>
-                <th>
-                  Company
-                  <input
-                    type="text"
-                    className="form-control form-control-sm mt-1"
-                    placeholder="Filter company..."
-                    value={columnFilters.company}
-                    onChange={(e) => updateColumnFilter('company', e.target.value)}
-                  />
-                </th>
-                <th>Status</th>
-                <th>
-                  Last Contact
-                  <input
-                    type="date"
-                    className="form-control form-control-sm mt-1"
-                    value={columnFilters.last_contact}
-                    onChange={(e) => updateColumnFilter('last_contact', e.target.value)}
-                  />
-                </th>
-                <th>Assigned To</th>
-                <th width="120">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
+        <div className="card-body p-0">
+          <div className="table-responsive">
+            <table className="table table-hover mb-0">
+              <thead>
                 <tr>
-                  <td colSpan="9" className="text-center py-4">
-                    <div className="spinner-border spinner-border-sm me-2" />
-                    Loading contacts...
-                  </td>
+                  <th style={{ width: '40px' }}>
+                    <input 
+                      type="checkbox"
+                      className="form-check-input"
+                      checked={selectedContacts.size === contacts.length && contacts.length > 0}
+                      onChange={handleSelectAll}
+                    />
+                  </th>
+                  <th>
+                    <div className="d-flex flex-column">
+                      <span>Name</span>
+                      <input 
+                        type="text"
+                        className="form-control form-control-sm mt-1"
+                        placeholder="Filter..."
+                        value={columnFilters.name}
+                        onChange={(e) => setColumnFilters({ ...columnFilters, name: e.target.value })}
+                      />
+                    </div>
+                  </th>
+                  <th>
+                    <div className="d-flex flex-column">
+                      <span>Phone</span>
+                      <input 
+                        type="text"
+                        className="form-control form-control-sm mt-1"
+                        placeholder="Filter..."
+                        value={columnFilters.phone}
+                        onChange={(e) => setColumnFilters({ ...columnFilters, phone: e.target.value })}
+                      />
+                    </div>
+                  </th>
+                  <th>
+                    <div className="d-flex flex-column">
+                      <span>Email</span>
+                      <input 
+                        type="text"
+                        className="form-control form-control-sm mt-1"
+                        placeholder="Filter..."
+                        value={columnFilters.email}
+                        onChange={(e) => setColumnFilters({ ...columnFilters, email: e.target.value })}
+                      />
+                    </div>
+                  </th>
+                  <th>
+                    <div className="d-flex flex-column">
+                      <span>Company</span>
+                      <input 
+                        type="text"
+                        className="form-control form-control-sm mt-1"
+                        placeholder="Filter..."
+                        value={columnFilters.company}
+                        onChange={(e) => setColumnFilters({ ...columnFilters, company: e.target.value })}
+                      />
+                    </div>
+                  </th>
+                  <th>Status</th>
+                  <th>Assigned To</th>
+                  <th>Tags</th>
+                  <th>
+                    <div className="d-flex flex-column">
+                      <span>Last Contact</span>
+                      <input 
+                        type="date"
+                        className="form-control form-control-sm mt-1"
+                        value={columnFilters.last_contact}
+                        onChange={(e) => setColumnFilters({ ...columnFilters, last_contact: e.target.value })}
+                      />
+                    </div>
+                  </th>
+                  <th>Custom Fields</th>
+                  <th>Actions</th>
                 </tr>
-              ) : contacts.length === 0 ? (
-                <tr>
-                  <td colSpan="9" className="text-center py-4 text-muted">
-                    No contacts found
-                  </td>
-                </tr>
-              ) : (
-                contacts.map(contact => {
-                  const hasCustomData = contact.custom_data && Object.keys(contact.custom_data).length > 0;
-                  const hasMatchedFields = contact.matched_custom_fields && contact.matched_custom_fields.length > 0;
-                  
-                  return (
-                    <tr 
-                      key={contact.id} 
-                      className={`
-                        ${selectedContacts.has(contact.id) ? 'table-active' : ''}
-                        ${hasMatchedFields ? 'has-custom-match' : ''}
-                      `}
-                    >
-                      <td>
-                        <input
-                          type="checkbox"
-                          className="form-check-input"
-                          checked={selectedContacts.has(contact.id)}
-                          onChange={() => handleSelectContact(contact.id)}
-                        />
-                      </td>
-                      <td>
-                        <div className="d-flex flex-column">
-                          <div className="fw-medium">
-                            {contact.first_name || contact.last_name ? 
-                              `${contact.first_name || ''} ${contact.last_name || ''}`.trim() : 
-                              <span className="text-muted">No name</span>
-                            }
-                          </div>
-                          
-                          {/* Show custom fields when custom search is active */}
-                          {customFieldsSearchActive && hasCustomData && (
-                            <div className="mt-1">
-                              <CustomFieldsDisplay
-                                customData={contact.custom_data}
-                                matchedFields={contact.matched_custom_fields || []}
-                                displayMode="inline"
-                                maxFields={3}
-                              />
+              </thead>
+              <tbody>
+                {loading ? (
+                  <tr>
+                    <td colSpan="11" className="text-center py-4">
+                      <div className="spinner-border" role="status">
+                        <span className="visually-hidden">Loading...</span>
+                      </div>
+                    </td>
+                  </tr>
+                ) : contacts.length === 0 ? (
+                  <tr>
+                    <td colSpan="11" className="text-center py-4 text-muted">
+                      No contacts found
+                    </td>
+                  </tr>
+                ) : (
+                  contacts.map(contact => {
+                    const { phoneNumber, isDialing, isInCall } = getPhoneDisplay(contact);
+                    
+                    return (
+                      <tr key={contact.id}>
+                        <td>
+                          <input 
+                            type="checkbox"
+                            className="form-check-input"
+                            checked={selectedContacts.has(contact.id)}
+                            onChange={() => handleSelectContact(contact.id)}
+                          />
+                        </td>
+                        <td>
+                          <div className="d-flex align-items-center">
+                            <div className="bg-primary rounded-circle p-2 text-white me-2" style={{ width: '35px', height: '35px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              {contact.first_name ? contact.first_name.charAt(0).toUpperCase() : '#'}
                             </div>
-                          )}
-                        </div>
-                      </td>
-                      <td>
-                        <a 
-                          href="#" 
-                          className="text-decoration-none"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            handleCall(contact.phone_primary, contact.id);
-                          }}
-                        >
-                          <Phone size={14} className="me-1" />
-                          {contact.phone_display}
-                        </a>
-                      </td>
-                      <td>
-                        {contact.email ? (
+                            <div>
+                              <div className="fw-medium">
+                                {contact.first_name} {contact.last_name}
+                              </div>
+                              {contact.interaction_count > 0 && (
+                                <small className="text-muted">
+                                  {contact.interaction_count} interactions
+                                </small>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                        <td>
+                          <div className="d-flex align-items-center gap-2">
+                            <span>{phoneNumber}</span>
+                          </div>
+                        </td>
+                        <td>
                           <a href={`mailto:${contact.email}`} className="text-decoration-none">
-                            <Mail size={14} className="me-1" />
                             {contact.email}
                           </a>
-                        ) : (
-                          <span className="text-muted">-</span>
-                        )}
-                      </td>
-                      <td>
-                        {contact.company || <span className="text-muted">-</span>}
-                        
-                        {/* Show custom data count if not in custom search mode */}
-                        {!customFieldsSearchActive && hasCustomData && (
-                          <div>
-                            <small className="text-muted">
-                              <Database size={12} className="me-1" />
-                              {Object.keys(contact.custom_data).length} fields
-                            </small>
-                          </div>
-                        )}
-                      </td>
-                      <td>
-                        <span className={`badge ${getStatusBadgeClass(contact.status)}`}>
-                          {contact.status.replace('_', ' ')}
-                        </span>
-                      </td>
-                      <td>
-                        {contact.last_interaction ? 
-                          new Date(contact.last_interaction).toLocaleDateString() : 
-                          <span className="text-muted">Never</span>
-                        }
-                      </td>
-                      <td>{contact.assigned_to_name || <span className="text-muted">Unassigned</span>}</td>
-                      <td>
-                        {/* UPDATED ACTIONS TD */}
-                        <div className="btn-group btn-group-sm">
-                          <button 
-                            className="btn btn-outline-secondary"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleViewContact(contact.id);
-                            }}
-                            title="View full contact details"
-                          >
-                            <Eye size={14} />
-                          </button>
-                          <button 
-                            className="btn btn-outline-secondary"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleEditContact(contact);
-                            }}
-                            title="Edit contact information"
-                          >
-                            <Edit size={14} />
-                          </button>
-                          <button 
-                            className="btn btn-outline-danger"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteContact(contact.id);
-                            }}
-                            title="Delete this contact"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                          <button 
-                            className={`btn ${
-                              callingNumbers.has(contact.phone_primary) 
-                                ? 'btn-warning' 
-                                : activeCall && !['Terminated', 'Failed', 'Rejected', 'terminated', 'failed', 'rejected'].includes(activeCall.status)
-                                  ? 'btn-secondary'
-                                  : 'btn-outline-primary'
-                            }`}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleCall(contact.phone_primary, contact.id);
-                            }}
-                            disabled={
-                              callingNumbers.has(contact.phone_primary) ||
-                              (activeCall && !['Terminated', 'Failed', 'Rejected', 'terminated', 'failed', 'rejected'].includes(activeCall.status))
-                            }
-                            title={
-                              callingNumbers.has(contact.phone_primary) 
-                                ? 'Calling...' 
-                                : activeCall && !['Terminated', 'Failed', 'Rejected', 'terminated', 'failed', 'rejected'].includes(activeCall.status)
-                                  ? 'Call in progress'
-                                  : 'Call this contact'
-                            }
-                          >
-                            {callingNumbers.has(contact.phone_primary) ? (
-                              <>
-                                <span className="spinner-border spinner-border-sm me-1" />
-                                <Phone size={14} />
-                              </>
-                            ) : (
-                              <Phone size={14} />
+                        </td>
+                        <td>{contact.company}</td>
+                        <td>
+                          <span className={`badge bg-${
+                            contact.status === 'new' ? 'primary' :
+                            contact.status === 'contacted' ? 'info' :
+                            contact.status === 'interested' ? 'success' :
+                            contact.status === 'not_interested' ? 'warning' :
+                            'danger'
+                          }`}>
+                            {contact.status}
+                          </span>
+                        </td>
+                        <td>
+                          {contact.assigned_to_name || '-'}
+                        </td>
+                        <td>
+                          <div className="d-flex gap-1 flex-wrap">
+                            {contact.tags && contact.tags.slice(0, 2).map((tag, index) => (
+                              <span key={index} className="badge bg-secondary" style={{ fontSize: '0.75rem' }}>
+                                {tag}
+                              </span>
+                            ))}
+                            {contact.tags && contact.tags.length > 2 && (
+                              <span className="badge bg-secondary" style={{ fontSize: '0.75rem' }}>
+                                +{contact.tags.length - 2}
+                              </span>
                             )}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+                          </div>
+                        </td>
+                        <td>
+                          {contact.last_contacted_at ? 
+                            new Date(contact.last_contacted_at).toLocaleDateString() : 
+                            '-'
+                          }
+                        </td>
+                        <td>
+                          {contact.custom_fields && Object.keys(contact.custom_fields).length > 0 ? (
+                            <CustomFieldsDisplay 
+                              customFields={contact.custom_fields} 
+                              maxDisplay={2} 
+                            />
+                          ) : (
+                            '-'
+                          )}
+                        </td>
+                        <td>
+                          <div className="d-flex gap-1">
+                            <button 
+                              className="btn btn-sm btn-outline-primary"
+                              onClick={() => handleViewContact(contact.id)}
+                              title="View"
+                            >
+                              <Eye size={14} />
+                            </button>
+                            <button 
+                              className="btn btn-sm btn-outline-secondary"
+                              onClick={() => handleEditContact(contact)}
+                              title="Edit"
+                            >
+                              <Edit size={14} />
+                            </button>
+                            <button 
+                              className="btn btn-sm btn-outline-danger"
+                              onClick={() => handleDeleteContact(contact.id)}
+                              title="Delete"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                            <button 
+                              className={`btn btn-sm ${isInCall ? 'btn-danger' : isDialing ? 'btn-warning' : 'btn-success'}`}
+                              onClick={() => handleCall(phoneNumber, contact.id)}
+                              disabled={isDialing || (activeCall && !isInCall)}
+                              title={isInCall ? 'In Call' : isDialing ? 'Dialing...' : 'Call'}
+                            >
+                              {isInCall ? (
+                                <>
+                                  <Phone size={14} className="me-1" />
+                                  In Call
+                                </>
+                              ) : isDialing ? (
+                                <>
+                                  <div className="spinner-border spinner-border-sm me-1" role="status">
+                                    <span className="visually-hidden">Dialing...</span>
+                                  </div>
+                                  Dialing
+                                </>
+                              ) : (
+                                <Phone size={14} />
+                              )}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
 
         {/* Pagination */}
         {pagination.pages > 1 && (
-          <div className="card-footer d-flex justify-content-between align-items-center">
-            <div className="text-muted">
-              Showing {((pagination.page - 1) * pagination.limit) + 1} to{' '}
-              {Math.min(pagination.page * pagination.limit, pagination.total)} of{' '}
-              {pagination.total} contacts
-            </div>
-            <nav>
-              <ul className="pagination mb-0">
-                <li className={`page-item ${pagination.page === 1 ? 'disabled' : ''}`}>
-                  <button 
-                    className="page-link"
-                    onClick={() => setPagination({...pagination, page: pagination.page - 1})}
-                    disabled={pagination.page === 1}
-                  >
-                    <ChevronLeft size={16} />
-                  </button>
-                </li>
-                {[...Array(Math.min(5, pagination.pages))].map((_, i) => {
-                  const pageNum = i + 1;
-                  return (
-                    <li key={pageNum} className={`page-item ${pagination.page === pageNum ? 'active' : ''}`}>
-                      <button 
-                        className="page-link"
-                        onClick={() => setPagination({...pagination, page: pageNum})}
-                      >
-                        {pageNum}
-                      </button>
-                    </li>
-                  );
-                })}
-                {pagination.pages > 5 && (
-                  <li className="page-item disabled">
-                    <span className="page-link">...</span>
+          <div className="card-footer">
+            <div className="d-flex justify-content-between align-items-center">
+              <div>
+                Showing {((pagination.page - 1) * pagination.limit) + 1} to{' '}
+                {Math.min(pagination.page * pagination.limit, pagination.total)} of{' '}
+                {pagination.total} contacts
+              </div>
+              <nav>
+                <ul className="pagination mb-0">
+                  <li className={`page-item ${pagination.page === 1 ? 'disabled' : ''}`}>
+                    <button 
+                      className="page-link"
+                      onClick={() => setPagination({ ...pagination, page: pagination.page - 1 })}
+                      disabled={pagination.page === 1}
+                    >
+                      <ChevronLeft size={16} />
+                    </button>
                   </li>
-                )}
-                <li className={`page-item ${pagination.page === pagination.pages ? 'disabled' : ''}`}>
-                  <button 
-                    className="page-link"
-                    onClick={() => setPagination({...pagination, page: pagination.page + 1})}
-                    disabled={pagination.page === pagination.pages}
-                  >
-                    <ChevronRight size={16} />
-                  </button>
-                </li>
-              </ul>
-            </nav>
+                  {[...Array(Math.min(5, pagination.pages))].map((_, index) => {
+                    const pageNum = index + 1;
+                    return (
+                      <li key={pageNum} className={`page-item ${pagination.page === pageNum ? 'active' : ''}`}>
+                        <button 
+                          className="page-link"
+                          onClick={() => setPagination({ ...pagination, page: pageNum })}
+                        >
+                          {pageNum}
+                        </button>
+                      </li>
+                    );
+                  })}
+                  {pagination.pages > 5 && (
+                    <li className="page-item disabled">
+                      <span className="page-link">...</span>
+                    </li>
+                  )}
+                  <li className={`page-item ${pagination.page === pagination.pages ? 'disabled' : ''}`}>
+                    <button 
+                      className="page-link"
+                      onClick={() => setPagination({ ...pagination, page: pagination.page + 1 })}
+                      disabled={pagination.page === pagination.pages}
+                    >
+                      <ChevronRight size={16} />
+                    </button>
+                  </li>
+                </ul>
+              </nav>
+            </div>
           </div>
         )}
       </div>
@@ -1111,68 +1042,89 @@ export default function ContactsManagement() {
       {/* Modals */}
       {showImportModal && (
         <EnhancedImportModal
-          campaigns={campaigns}
-          onClose={() => setShowImportModal(false)}
-          onImportComplete={() => {
+          show={showImportModal}
+          onHide={() => setShowImportModal(false)}
+          onSuccess={() => {
             setShowImportModal(false);
-            if (customFieldsSearchActive) {
-              loadContactsWithCustomFields();
-            } else {
-              loadContacts();
-            }
+            loadContacts();
+          }}
+          campaignId={selectedCampaign}
+        />
+      )}
+
+      {showDuplicateManager && selectedCampaign && (
+        <DuplicateManager
+          campaignId={selectedCampaign}
+          onClose={() => {
+            setShowDuplicateManager(false);
+            loadContacts();
           }}
         />
       )}
-      
-      {showDuplicateManager && (
-        <DuplicateManager
-          campaignId={selectedCampaign}
-          onClose={() => setShowDuplicateManager(false)}
-        />
-      )}
-      
+
       {showAddModal && (
         <AddContactModal
+          show={showAddModal}
+          onHide={() => setShowAddModal(false)}
+          onSuccess={handleAddSuccess}
+          campaignId={selectedCampaign}
           campaigns={campaigns}
           onClose={() => setShowAddModal(false)}
-          onSuccess={handleAddSuccess}
         />
       )}
 
       {showEditModal && selectedContactForEdit && (
         <EditContactModal
+          show={showEditModal}
+          onHide={() => {
+            setShowEditModal(false);
+            setSelectedContactForEdit(null);
+          }}
+          onSuccess={handleEditSuccess}
           contact={selectedContactForEdit}
           campaigns={campaigns}
           onClose={() => {
             setShowEditModal(false);
             setSelectedContactForEdit(null);
           }}
-          onSuccess={handleEditSuccess}
         />
       )}
 
       {showViewModal && selectedContactIdForView && (
         <ViewContactModal
-          contactId={selectedContactIdForView}
-          onClose={() => {
+          show={showViewModal}
+          onHide={() => {
             setShowViewModal(false);
             setSelectedContactIdForView(null);
           }}
+          contactId={selectedContactIdForView}
           onEdit={(contact) => {
             setShowViewModal(false);
             setSelectedContactIdForView(null);
             handleEditContact(contact);
           }}
+          onClose={() => {
+            setShowViewModal(false);
+            setSelectedContactIdForView(null);
+          }}
         />
       )}
 
-      {/* Custom Fields Search Modal */}
-      {showCustomFieldsSearch && (
+      {showCustomFieldsSearch && selectedCampaign && (
         <CustomFieldsSearchModal
+          show={showCustomFieldsSearch}
+          onHide={() => setShowCustomFieldsSearch(false)}
           campaignId={selectedCampaign}
-          onClose={() => setShowCustomFieldsSearch(false)}
           onSearch={handleCustomFieldsSearch}
         />
+      )}
+
+      {/* Alert for no campaign selected */}
+      {!selectedCampaign && !loading && (
+        <div className="alert alert-warning mt-3">
+          <AlertCircle size={20} className="me-2" />
+          Please select a campaign to view contacts
+        </div>
       )}
     </div>
   );

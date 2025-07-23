@@ -1,7 +1,8 @@
-// src/App.js - Updated with AutoCallNotesWrapper
+// client/src/App.js - Updated with UserDataProvider
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AppProvider } from './context/AppContext';
+import { UserDataProvider } from './context/UserDataContext';
 import Menu from './components/Menu';
 import TopBar from './components/TopBar';
 import Login from './pages/Login';
@@ -54,47 +55,49 @@ const PrivateLayout = ({ children }) => {
 export default function App() {
   return (
     <AppProvider>
-      <CallProvider>
-        <BrowserRouter>
-          <Routes>
-            <Route path="/" element={<Login />} />
-            <Route
-              path="/dashboard"
-              element={
-                <PrivateLayout>
-                  <Dashboard />
-                </PrivateLayout>
-              }
-            />
-            <Route
-              path="/inbox"
-              element={
-                <PrivateLayout>
-                  <Inbox />
-                </PrivateLayout>
-              }
-            />
-            <Route
-              path="/contacts-management"
-              element={
-                <PrivateLayout>
-                  <ContactsManagement />
-                </PrivateLayout>
-              }
-            />
-            <Route
-              path="/change-password"
-              element={
-                <PrivateLayout>
-                  <ChangePassword />
-                </PrivateLayout>
-              }
-            />
-            <Route path="*" element={<Navigate to="/dashboard" replace />} />
-          </Routes>
-          <CallStatusProvider />
-        </BrowserRouter>
-      </CallProvider>
+      <UserDataProvider>
+        <CallProvider>
+          <BrowserRouter>
+            <Routes>
+              <Route path="/" element={<Login />} />
+              <Route
+                path="/dashboard"
+                element={
+                  <PrivateLayout>
+                    <Dashboard />
+                  </PrivateLayout>
+                }
+              />
+              <Route
+                path="/inbox"
+                element={
+                  <PrivateLayout>
+                    <Inbox />
+                  </PrivateLayout>
+                }
+              />
+              <Route
+                path="/contacts-management"
+                element={
+                  <PrivateLayout>
+                    <ContactsManagement />
+                  </PrivateLayout>
+                }
+              />
+              <Route
+                path="/change-password"
+                element={
+                  <PrivateLayout>
+                    <ChangePassword />
+                  </PrivateLayout>
+                }
+              />
+              <Route path="*" element={<Navigate to="/dashboard" replace />} />
+            </Routes>
+            <CallStatusProvider />
+          </BrowserRouter>
+        </CallProvider>
+      </UserDataProvider>
     </AppProvider>
   );
 }
