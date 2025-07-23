@@ -1,4 +1,4 @@
-// src/context/CallContext.js - Enhanced with contact information
+// src/context/CallContext.js - Fixed to preserve selectedContact in Inbox
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import SipService from '../services/SipService';
 import { api } from '../services/api';
@@ -109,7 +109,11 @@ export const CallProvider = ({ children }) => {
         // Clear active call after a short delay
         setTimeout(() => {
           setActiveCall(null);
-          setSelectedContact(null);
+          // Only clear selectedContact if NOT in Inbox
+          const currentPath = window.location.pathname;
+          if (!currentPath.includes('/inbox')) {
+            setSelectedContact(null);
+          }
         }, 1000);
       } else {
         // Update active call with enriched contact information

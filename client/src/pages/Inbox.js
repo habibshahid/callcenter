@@ -1,8 +1,8 @@
-// client/src/pages/Inbox.js - Enhanced Version
-import React, { useState, useEffect, useMemo } from 'react';
+// client/src/pages/Inbox.js - Fixed with Original Layout
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   Phone, Pause, MessageSquare, GitBranch, Disc, X, Plus, 
-  UserPlus, Mail, Building, Calendar, Tag, Save, Info
+  UserPlus, Mail, Building, Calendar, Tag, Save, Info, FileText
 } from 'lucide-react';
 import { api } from '../services/api';
 import Dialer from '../components/Dialer';
@@ -31,6 +31,17 @@ export default function Inbox() {
   const [newNote, setNewNote] = useState('');
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [contactDetails, setContactDetails] = useState(null);
+  
+  // Interaction panel state
+  const [interactionNote, setInteractionNote] = useState('');
+  const [selectedTags, setSelectedTags] = useState([]);
+  const [selectedDisposition, setSelectedDisposition] = useState('');
+  const [availableTags, setAvailableTags] = useState([]);
+  const [dispositions, setDispositions] = useState([]);
+  const [savingInteraction, setSavingInteraction] = useState(false);
+  
+  // Cache for loaded contact details
+  const [contactDetailsCache, setContactDetailsCache] = useState({});
 
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
@@ -74,6 +85,7 @@ export default function Inbox() {
 
   useEffect(() => {
     loadContacts();
+    loadTagsAndDispositions();
   }, []);
 
   useEffect(() => {
@@ -86,14 +98,16 @@ export default function Inbox() {
       );
       
       if (contactByPhone) {
-        // Select the existing contact
-        handleSelectContact(contactByPhone);
+        // Only select if not already selected
+        if (selectedContact?.id !== contactByPhone.id) {
+          handleSelectContact(contactByPhone);
+        }
       } else if (activeCall.contactId) {
         // If we have a contactId but contact not in list, try to find by ID
         const contactById = contacts.find(c => c.id === activeCall.contactId);
-        if (contactById) {
+        if (contactById && selectedContact?.id !== contactById.id) {
           handleSelectContact(contactById);
-        } else {
+        } else if (!contactById && selectedContact?.id !== activeCall.contactId) {
           // Create a temporary contact for the active call
           const tempContact = {
             id: activeCall.contactId || 'active-call',
@@ -144,13 +158,41 @@ export default function Inbox() {
     }
   };
 
+  const loadTagsAndDispositions = async () => {
+    try {
+      const [tagsData, dispositionsData] = await Promise.all([
+        api.getTags(),
+        api.getDispositions()
+      ]);
+      
+      setAvailableTags(tagsData.map(tag => tag.name));
+      setDispositions(dispositionsData);
+    } catch (error) {
+      console.error('Error loading tags and dispositions:', error);
+      // Fallback values
+      setAvailableTags(['Hot Lead', 'Decision Maker', 'Follow Up Required', 'Not Interested']);
+      setDispositions([
+        { id: 1, name: 'Interested', color: 'success' },
+        { id: 2, name: 'Not Interested', color: 'danger' },
+        { id: 3, name: 'Call Back Later', color: 'warning' },
+        { id: 4, name: 'No Answer', color: 'secondary' }
+      ]);
+    }
+  };
+
   const loadContactDetails = async (contactId) => {
     if (contactId === 'active-call') return;
+    
+    // Check cache first
+    if (contactDetailsCache[contactId]) {
+      setContactDetails(contactDetailsCache[contactId].details);
+      setContactHistory(contactDetailsCache[contactId].history);
+      return;
+    }
     
     try {
       setLoadingDetails(true);
       const details = await api.getContactDetails(contactId);
-      setContactDetails(details);
       
       // Transform interactions to match expected format
       const history = details.interactions?.map(interaction => ({
@@ -164,6 +206,13 @@ export default function Inbox() {
         details: interaction.details
       })) || [];
       
+      // Cache the details
+      setContactDetailsCache(prev => ({
+        ...prev,
+        [contactId]: { details, history }
+      }));
+      
+      setContactDetails(details);
       setContactHistory(history);
     } catch (error) {
       console.error('Error loading contact details:', error);
@@ -175,9 +224,12 @@ export default function Inbox() {
   };
 
   const handleSelectContact = (contact) => {
-    setSelectedContact(contact);
-    if (contact.id !== 'active-call') {
-      loadContactDetails(contact.id);
+    // Only update if different contact
+    if (selectedContact?.id !== contact.id) {
+      setSelectedContact(contact);
+      if (contact.id !== 'active-call') {
+        loadContactDetails(contact.id);
+      }
     }
   };
 
@@ -202,6 +254,14 @@ export default function Inbox() {
       });
       
       setNewNote('');
+      
+      // Clear cache for this contact and reload
+      setContactDetailsCache(prev => {
+        const newCache = { ...prev };
+        delete newCache[selectedContact.id];
+        return newCache;
+      });
+      
       // Reload contact details to show new note
       loadContactDetails(selectedContact.id);
     } catch (error) {
@@ -212,10 +272,70 @@ export default function Inbox() {
     }
   };
 
+  const handleSaveInteraction = async () => {
+    if (!selectedContact || selectedContact.id === 'active-call') return;
+    if (!interactionNote.trim() && selectedTags.length === 0 && !selectedDisposition) {
+      alert('Please add notes, tags, or disposition');
+      return;
+    }
+
+    try {
+      setSavingInteraction(true);
+      
+      // Save the interaction
+      await api.addContactInteraction(selectedContact.id, {
+        interaction_type: 'note',
+        direction: 'internal',
+        details: {
+          note: interactionNote,
+          tags: selectedTags,
+          disposition: selectedDisposition
+        }
+      });
+
+      // Update contact tags if any selected
+      if (selectedTags.length > 0) {
+        await api.updateContactDetails(selectedContact.id, {
+          tags: selectedTags
+        });
+      }
+
+      // Clear form
+      setInteractionNote('');
+      setSelectedTags([]);
+      setSelectedDisposition('');
+      
+      // Clear cache for this contact and reload
+      setContactDetailsCache(prev => {
+        const newCache = { ...prev };
+        delete newCache[selectedContact.id];
+        return newCache;
+      });
+      
+      // Reload contact details
+      loadContactDetails(selectedContact.id);
+      
+      alert('Interaction saved successfully!');
+    } catch (error) {
+      console.error('Error saving interaction:', error);
+      alert('Error saving interaction');
+    } finally {
+      setSavingInteraction(false);
+    }
+  };
+
+  const toggleTag = (tag) => {
+    setSelectedTags(prev => 
+      prev.includes(tag) 
+        ? prev.filter(t => t !== tag)
+        : [...prev, tag]
+    );
+  };
+
   return (
-    <div className="d-flex w-100 h-100">
+    <div className="d-flex w-100 h-100" style={{ minWidth: '1100px' }}>
       {/* Sidebar */}
-      <div className="border-end bg-light" style={{ width: '350px', overflowY: 'auto' }}>
+      <div className="border-end bg-light" style={{ width: '350px', flexShrink: 0, overflowY: 'auto' }}>
         <div className="p-3 border-bottom">
           <div className="d-flex align-items-center gap-2">
             <input 
@@ -403,19 +523,28 @@ export default function Inbox() {
                   <>
                     <button 
                       className={`btn btn-light ${activeCall.isHeld ? 'active' : ''}`}
-                      onClick={handleHoldCall}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleHoldCall();
+                      }}
                     >
                       <Pause size={18} /> Hold
                     </button>
                     <button 
                       className={`btn btn-light ${activeCall.isMuted ? 'active' : ''}`}
-                      onClick={handleMuteCall}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleMuteCall();
+                      }}
                     >
                       <Disc size={18} /> Mute
                     </button>
                     <button 
                       className="btn btn-danger"
-                      onClick={handleEndCall}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleEndCall();
+                      }}
                     >
                       <X size={18} /> End
                     </button>
@@ -424,7 +553,10 @@ export default function Inbox() {
                 {!selectedContact.isActive && (
                   <button 
                     className="btn btn-primary"
-                    onClick={() => handleDial(selectedContact.phone)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDial(selectedContact.phone);
+                    }}
                   >
                     <Phone size={18} /> Call
                   </button>
@@ -436,7 +568,7 @@ export default function Inbox() {
           {/* Contact Info and History Container */}
           <div className="flex-grow-1 d-flex" style={{ overflow: 'hidden' }}>
             {/* Left Panel - Contact Details */}
-            <div className="border-end" style={{ width: '350px', overflowY: 'auto' }}>
+            <div className="border-end" style={{ width: '350px', flexShrink: 0, overflowY: 'auto' }}>
               {loadingDetails ? (
                 <div className="p-4 text-center">
                   <div className="spinner-border text-primary" />
@@ -554,58 +686,146 @@ export default function Inbox() {
               )}
             </div>
 
-            {/* Right Panel - History */}
-            <div className="flex-grow-1 p-3" style={{ overflowY: 'auto' }}>
-              <h6 className="mb-3">Interaction History</h6>
-              {contactHistory.length === 0 ? (
-                <p className="text-muted text-center py-4">No history available</p>
-              ) : (
-                <div className="timeline">
-                  {contactHistory.map((entry, index) => (
-                    <div key={entry.id || index} className="mb-4 pb-3 border-bottom">
-                      <div className="d-flex justify-content-between align-items-start">
-                        <div className="d-flex align-items-start">
-                          <div className={`rounded-circle p-2 me-3 ${
-                            entry.action === 'call' ? 'bg-success' : 
-                            entry.action === 'note' ? 'bg-info' : 
-                            'bg-secondary'
-                          } text-white`}>
-                            {entry.action === 'call' ? <Phone size={16} /> : <MessageSquare size={16} />}
-                          </div>
-                          <div>
-                            <div className="fw-bold text-capitalize">{entry.action}</div>
-                            <div className="text-muted small">
-                              {entry.agent} • {entry.date} {entry.time}
-                              {entry.duration && entry.duration !== 'N/A' && ` • Duration: ${entry.duration}`}
+            {/* Right Panel - Interactions */}
+            <div className="d-flex flex-column border-start bg-white" style={{ width: '100%', height: '100%' }}>
+              {/* Interaction Input Section */}
+              <div className="bg-light p-3 border-bottom" style={{ flexShrink: 0 }}>
+                <h6 className="mb-2 d-flex align-items-center">
+                  <FileText size={18} className="me-2" />
+                  Add Interaction
+                </h6>
+                
+                {/* Notes Input */}
+                <div className="mb-2">
+                  <label className="form-label small fw-bold mb-1">Notes</label>
+                  <textarea
+                    className="form-control form-control-sm"
+                    rows="2"
+                    placeholder="Add interaction notes..."
+                    value={interactionNote}
+                    onChange={(e) => setInteractionNote(e.target.value)}
+                    disabled={savingInteraction || selectedContact?.id === 'active-call'}
+                  />
+                </div>
+
+                {/* Tags Selection */}
+                <div className="mb-2">
+                  <label className="form-label small fw-bold mb-1">
+                    <Tag size={14} className="me-1" />
+                    Tags
+                  </label>
+                  <div className="d-flex flex-wrap gap-1">
+                    {availableTags.map(tag => (
+                      <button
+                        key={tag}
+                        className={`btn btn-sm py-0 px-2 ${
+                          selectedTags.includes(tag) 
+                            ? 'btn-primary' 
+                            : 'btn-outline-secondary'
+                        }`}
+                        style={{ fontSize: '0.8rem' }}
+                        onClick={() => toggleTag(tag)}
+                        disabled={savingInteraction || selectedContact?.id === 'active-call'}
+                      >
+                        {tag}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Disposition Selection */}
+                <div className="mb-2">
+                  <label className="form-label small fw-bold mb-1">Disposition</label>
+                  <select 
+                    className="form-select form-select-sm"
+                    value={selectedDisposition}
+                    onChange={(e) => setSelectedDisposition(e.target.value)}
+                    disabled={savingInteraction || selectedContact?.id === 'active-call'}
+                  >
+                    <option value="">Select disposition...</option>
+                    {dispositions.map(disp => (
+                      <option key={disp.id} value={disp.name}>
+                        {disp.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Save Button */}
+                <button 
+                  className="btn btn-primary btn-sm w-100"
+                  onClick={handleSaveInteraction}
+                  disabled={savingInteraction || selectedContact?.id === 'active-call' || (!interactionNote.trim() && selectedTags.length === 0 && !selectedDisposition)}
+                >
+                  {savingInteraction ? (
+                    <>
+                      <span className="spinner-border spinner-border-sm me-2" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Save size={16} className="me-2" />
+                      Save Interaction
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* History Section */}
+              <div className="p-3" style={{ flex: '1 1 auto', overflowY: 'auto', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+                <h6 className="mb-3" style={{ flexShrink: 0 }}>Interaction History</h6>
+                {contactHistory.length === 0 ? (
+                  <div className="d-flex align-items-center justify-content-center flex-grow-1">
+                    <p className="text-muted">No history available</p>
+                  </div>
+                ) : (
+                  <div className="timeline" style={{ flex: '1 1 auto' }}>
+                    {contactHistory.map((entry, index) => (
+                      <div key={entry.id || index} className="mb-4 pb-3 border-bottom">
+                        <div className="d-flex justify-content-between align-items-start">
+                          <div className="d-flex align-items-start">
+                            <div className={`rounded-circle p-2 me-3 ${
+                              entry.action === 'call' ? 'bg-success' : 
+                              entry.action === 'note' ? 'bg-info' : 
+                              'bg-secondary'
+                            } text-white`}>
+                              {entry.action === 'call' ? <Phone size={16} /> : <MessageSquare size={16} />}
                             </div>
-                            {entry.details?.note && (
-                              <div className="mt-2 p-2 bg-light rounded">
-                                <small>{entry.details.note}</small>
+                            <div>
+                              <div className="fw-bold text-capitalize">{entry.action}</div>
+                              <div className="text-muted small">
+                                {entry.agent} • {entry.date} {entry.time}
+                                {entry.duration && entry.duration !== 'N/A' && ` • Duration: ${entry.duration}`}
                               </div>
-                            )}
-                            {entry.details?.tags && entry.details.tags.length > 0 && (
-                              <div className="mt-2">
-                                {entry.details.tags.map((tag, idx) => (
-                                  <span key={idx} className="badge bg-secondary me-1">
-                                    {tag}
+                              {entry.details?.note && (
+                                <div className="mt-2 p-2 bg-light rounded">
+                                  <small>{entry.details.note}</small>
+                                </div>
+                              )}
+                              {entry.details?.tags && entry.details.tags.length > 0 && (
+                                <div className="mt-2">
+                                  {entry.details.tags.map((tag, idx) => (
+                                    <span key={idx} className="badge bg-secondary me-1">
+                                      {tag}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                              {entry.details?.disposition && (
+                                <div className="mt-1">
+                                  <span className="badge bg-primary">
+                                    {entry.details.disposition}
                                   </span>
-                                ))}
-                              </div>
-                            )}
-                            {entry.details?.disposition && (
-                              <div className="mt-1">
-                                <span className="badge bg-primary">
-                                  {entry.details.disposition}
-                                </span>
-                              </div>
-                            )}
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
