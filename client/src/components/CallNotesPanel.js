@@ -76,10 +76,24 @@ export default function CallNotesPanel({ contactId, onClose }) {
   const handleCloseAttempt = () => {
     const hasData = notes.trim() || selectedTags.length > 0 || selectedDisposition;
     
-    if (callEnded && !hasData && !forceClose) {
-      setShowCloseWarning(true);
-    } else if (hasData && !forceClose) {
-      // If there's unsaved data, show a different warning
+    // Check if disposition is mandatory and missing
+    const dispositionRequired = dispositionMandatory && !selectedDisposition;
+    
+    if (callEnded && !forceClose) {
+      // If disposition is mandatory and not selected, show warning
+      if (dispositionRequired) {
+        setShowCloseWarning(true);
+        return;
+      }
+      // If no data at all, show warning
+      if (!hasData) {
+        setShowCloseWarning(true);
+        return;
+      }
+    }
+    
+    // If there's unsaved data, show different warning
+    if (hasData && !forceClose) {
       if (window.confirm('You have unsaved notes. Are you sure you want to close without saving?')) {
         onClose();
       }
@@ -463,12 +477,21 @@ export default function CallNotesPanel({ contactId, onClose }) {
                 <h5 className="modal-title">Call Summary Required</h5>
               </div>
               <div className="modal-body">
-                <p>You must add at least one of the following before closing:</p>
-                <ul>
-                  <li>Call notes</li>
-                  <li>Disposition</li>
-                  <li>Tags</li>
-                </ul>
+                {dispositionMandatory && !selectedDisposition ? (
+                  <>
+                    <p>A disposition is required before closing the call notes.</p>
+                    <p>Please select a disposition for this call.</p>
+                  </>
+                ) : (
+                  <>
+                    <p>You must add at least one of the following before closing:</p>
+                    <ul>
+                      <li>Call notes</li>
+                      <li>Disposition</li>
+                      <li>Tags</li>
+                    </ul>
+                  </>
+                )}
                 <p>Would you like to force close anyway?</p>
               </div>
               <div className="modal-footer">
