@@ -15,6 +15,7 @@ import IncomingCallNotification from './components/IncomingCallNotification';
 import RealTimeSearch from './components/RealTimeSearch';
 import CallStatusProvider from './components/CallStatusProvider';
 import AutoCallNotesWrapper from './components/AutoCallNotesWrapper';
+import CalendarPage from './pages/CalendarPage';
 import 'bootstrap/dist/css/bootstrap.min.css';
 
 const PrivateLayout = ({ children }) => {
@@ -89,6 +90,14 @@ export default function App() {
                 element={
                   <PrivateLayout>
                     <ChangePassword />
+                  </PrivateLayout>
+                }
+              />
+              <Route
+                path="/calendar"
+                element={
+                  <PrivateLayout>
+                    <CalendarPage />
                   </PrivateLayout>
                 }
               />

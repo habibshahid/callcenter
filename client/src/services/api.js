@@ -481,6 +481,58 @@ export const api = {
     fetch(`${API_URL}/settings/global/${key}`, {
       headers: getHeaders()
     }).then(handleResponse),
+
+  // Tasks/Calendar methods - Add these to api.js before the closing brace
+  getTasks: (params = {}) => {
+    const queryString = new URLSearchParams(params).toString();
+    return fetch(`${API_URL}/tasks?${queryString}`, {
+      headers: getHeaders()
+    }).then(handleResponse);
+  },
+
+  getTask: (id) =>
+    fetch(`${API_URL}/tasks/${id}`, {
+      headers: getHeaders()
+    }).then(handleResponse),
+
+  createTask: (taskData) =>
+    fetch(`${API_URL}/tasks`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(taskData)
+    }).then(handleResponse),
+
+  updateTask: (id, taskData) =>
+    fetch(`${API_URL}/tasks/${id}`, {
+      method: 'PUT',
+      headers: getHeaders(),
+      body: JSON.stringify(taskData)
+    }).then(handleResponse),
+
+  updateTaskStatus: (id, status) =>
+    fetch(`${API_URL}/tasks/${id}/status`, {
+      method: 'PATCH',
+      headers: getHeaders(),
+      body: JSON.stringify({ status })
+    }).then(handleResponse),
+
+  rescheduleTask: (id, new_due_date, reason) =>
+    fetch(`${API_URL}/tasks/${id}/reschedule`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ new_due_date, reason })
+    }).then(handleResponse),
+
+  deleteTask: (id) =>
+    fetch(`${API_URL}/tasks/${id}`, {
+      method: 'DELETE',
+      headers: getHeaders()
+    }).then(handleResponse),
+
+  getTaskStats: () =>
+    fetch(`${API_URL}/tasks/stats/summary`, {
+      headers: getHeaders()
+    }).then(handleResponse),
 };
 
 export default api;

@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Phone, Mail, Building, User, Calendar, Clock, Activity, Tag, MessageSquare } from 'lucide-react';
 import { api } from '../services/api';
 import { useCall } from '../context/CallContext';
+import TasksWidget from './TasksWidget';
 
 export default function ViewContactModal({ contactId, onClose, onEdit }) {
   const { handleDial } = useCall();
@@ -12,7 +13,8 @@ export default function ViewContactModal({ contactId, onClose, onEdit }) {
   const [activeTab, setActiveTab] = useState('info');
   const [addingNote, setAddingNote] = useState(false);
   const [newNote, setNewNote] = useState('');
-
+  const [showTasksInModal, setShowTasksInModal] = useState(true);
+  
   useEffect(() => {
     loadContactDetails();
   }, [contactId]);
@@ -176,6 +178,15 @@ export default function ViewContactModal({ contactId, onClose, onEdit }) {
                   </div>
                 </div>
               </div>
+              {/* Add this inside the modal body, after the interactions section */}
+              {contact && contact.id && (
+                <div className="mt-4 border-top pt-3">
+                  <TasksWidget 
+                    contactId={contact.id} 
+                    compact={true} 
+                  />
+                </div>
+              )}
             </div>
 
             {/* Tabs */}
@@ -205,7 +216,6 @@ export default function ViewContactModal({ contactId, onClose, onEdit }) {
                 </button>
               </li>
             </ul>
-
             {/* Tab Content */}
             {activeTab === 'info' && (
               <div className="row">
@@ -402,6 +412,7 @@ export default function ViewContactModal({ contactId, onClose, onEdit }) {
               </div>
             )}
           </div>
+
 
           <div className="modal-footer">
             <button 

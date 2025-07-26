@@ -8,6 +8,7 @@ import { api } from '../services/api';
 import Dialer from '../components/Dialer';
 import { useCall } from '../context/CallContext';
 import CallNotesPanel from '../components/CallNotesPanel';
+import TasksWidget from '../components/TasksWidget';
 
 export default function Inbox() {
   const { 
@@ -727,6 +728,15 @@ export default function Inbox() {
                   <p>Select a contact to view details</p>
                 </div>
               )}
+              {selectedContact && selectedContact.id !== 'active-call' && (
+                <div className="p-4">
+                  <TasksWidget 
+                    contactId={selectedContact.id} 
+                    compact={true} 
+                  />
+                </div>
+              )}
+              
             </div>
 
             {/* Right Panel - Interactions */}

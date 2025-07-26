@@ -11,6 +11,7 @@ const agentRoutes = require('./agents');
 const { authenticateToken } = require('../middleware/auth');
 const contactsManagementRoutes = require('./contacts-management');
 const settingsRoutes = require('./settings');
+const tasksRoutes = require('./tasks');
 
 // Public routes
 router.use('/auth', authRoutes);
@@ -24,5 +25,6 @@ router.use('/sip', authenticateToken, sipRoutes);
 router.use('/agent', authenticateToken, agentRoutes);
 router.use('/contacts-management', authenticateToken, contactsManagementRoutes);
 router.use('/settings', settingsRoutes);
+router.use('/tasks', tasksRoutes);
 
 module.exports = router;

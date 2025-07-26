@@ -1,0 +1,56 @@
+/* Add this to your styles or create a TasksWidget.css file */
+
+.tasks-widget {
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.tasks-widget .task-item {
+  transition: all 0.2s ease;
+  overflow: hidden;
+}
+
+.tasks-widget .task-item:hover {
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  transform: translateY(-1px);
+}
+
+.tasks-widget .task-actions .btn {
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tasks-widget .task-actions .btn-group-vertical {
+  min-width: fit-content;
+}
+
+.tasks-widget .text-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Responsive adjustments */
+@media (max-width: 576px) {
+  .tasks-widget .task-item {
+    font-size: 0.875rem;
+  }
+  
+  .tasks-widget .task-actions .btn {
+    padding: 0.25rem 0.375rem !important;
+  }
+}
+
+/* For modal contexts */
+.modal .tasks-widget .task-item {
+  max-width: 100%;
+}
+
+/* Ensure proper spacing in different containers */
+.card .tasks-widget,
+.modal-body .tasks-widget {
+  margin: -0.5rem;
+  padding: 0.5rem;
+}
