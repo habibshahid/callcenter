@@ -44,7 +44,7 @@ const PrivateLayout = ({ children }) => {
           </div>
           
           {/* Content area with proper margin and scroll */}
-          <div className="flex-grow-1 overflow-auto" style={{ marginLeft: '60px', marginTop: '1rem' }}>
+          <div className="flex-grow-1" style={{ marginLeft: '60px', marginTop: '1rem', overflow: 'hidden' }}>
             {children}
           </div>
         </div>
